@@ -1,0 +1,10 @@
+{
+  "name": "video-upload-program",
+  "version": "0.1.0",
+  "private": true,
+  "description": "동영상 업로드 프로그램 MVP",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/server.test.js"
+  }
+}

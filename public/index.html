@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#131628">
+  <title>동영상 업로드 프로그램 — Upload desk</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="주 메뉴">
+      <div class="brand-lockup">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><strong>UPLOAD<br>DESK</strong><small>동영상 업로드 프로그램</small></span>
+      </div>
+      <div class="sidebar-label">WORKSPACE</div>
+      <nav>
+        <a class="nav-item is-active" href="#upload" aria-current="page"><span class="nav-icon">↗</span> 업로드</a>
+        <a class="nav-item" href="#library"><span class="nav-icon">▤</span> 내 동영상</a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="storage-meter"><div class="storage-top"><span>로컬 저장공간</span><b id="storagePercent">0%</b></div><div class="meter"><span id="storageBar"></span></div><small id="storageLabel">계산 중…</small></div>
+        <div class="account"><span class="avatar">U</span><span><strong>업로드 관리자</strong><small>로컬 워크스페이스</small></span><button class="icon-button" aria-label="계정 메뉴">•••</button></div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar"><div><span class="eyebrow">MEDIA WORKSPACE / 01</span><h1>업로드 센터</h1></div><div class="topbar-actions"><span class="live-dot"><i></i> 로컬 서버 연결됨</span><button class="help-button" aria-label="도움말">?</button></div></header>
+
+      <section class="upload-layout" id="upload">
+        <div class="upload-copy"><span class="section-kicker">DROP ZONE</span><h2>영상을 올리고<br><em>바로 정리하세요.</em></h2><p>촬영본, 편집본, 검수용 프리뷰를 한 곳에 보관합니다. 파일을 끌어놓거나 선택해 주세요.</p><div class="format-list"><span>MP4</span><span>MOV</span><span>WebM</span><span>MKV</span><b>최대 2 GB</b></div></div>
+        <div class="drop-zone" id="dropZone" tabindex="0" role="button" aria-label="동영상 파일 선택">
+          <div class="scanline" aria-hidden="true"></div><div class="drop-inner"><div class="upload-orbit"><span class="orbit-dot"></span><span class="orbit-dot"></span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 32V8m0 0L14 18m10-10 10 10M9 31v7a4 4 0 0 0 4 4h22a4 4 0 0 0 4-4v-7"/></svg></div><strong>파일을 여기에 놓으세요</strong><span>또는</span><button class="primary-button" id="chooseButton" type="button">동영상 선택</button><small>파일은 이 기기의 로컬 저장소에 보관됩니다.</small></div>
+          <input id="fileInput" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.webm,.mkv" multiple hidden>
+        </div>
+      </section>
+
+      <section class="queue-section" aria-live="polite" id="queueSection" hidden><div class="section-heading"><div><span class="section-kicker">IN PROGRESS</span><h2>업로드 큐 <span id="queueCount">0</span></h2></div></div><div id="queueList" class="queue-list"></div></section>
+
+      <section class="library-section" id="library"><div class="section-heading"><div><span class="section-kicker">YOUR LIBRARY</span><h2>내 동영상 <span id="videoCount">0</span></h2></div><div class="library-tools"><label class="search-field"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="파일명 검색" aria-label="파일명 검색"></label><button class="filter-button" id="filterButton" type="button">최신순 <span>⌄</span></button></div></div><div id="emptyState" class="empty-state"><div class="empty-icon">◌</div><h3>아직 업로드한 영상이 없습니다.</h3><p>첫 영상을 올리면 이곳에서 파일 상태와 정보를 확인할 수 있어요.</p><a href="#upload" class="text-link">업로드 시작하기 <span>→</span></a></div><div id="videoTable" class="video-table" hidden></div></section>
+      <footer class="footer-note"><span>UPLOAD DESK / LOCAL MEDIA STORAGE</span><span id="lastUpdated">마지막 동기화 —</span></footer>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
