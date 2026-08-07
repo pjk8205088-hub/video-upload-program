@@ -44,7 +44,7 @@ test('slot routing, duplicate protection, sandbox publish, analytics and comment
   assert.equal(ai.response.status, 200);
   assert.equal(ai.payload.metadata.source, 'local-fallback');
 
-  const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'youtube', displayName: 'Sandbox 채널', handle: '@sandbox' }) });
+  const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'instagram', displayName: 'Sandbox 채널', handle: '@sandbox' }) });
   assert.equal(account.response.status, 201);
   const routing = await json(base, `/api/accounts/${account.payload.account.id}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: [1, 3, 11] }) });
   assert.deepEqual(routing.payload.account.slotNumbers, [1, 3]);

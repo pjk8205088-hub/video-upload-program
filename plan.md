@@ -19,7 +19,7 @@
 
 ## 외부 연동 전환 작업
 
-- [ ] YouTube·네이버·TikTok·Facebook·Instagram OAuth authorization code 교환
+- [ ] 네이버·TikTok·Facebook·Instagram OAuth authorization code 교환
 - [ ] 각 provider의 upload/resumable upload, analytics, comments API 구현
 - [ ] 실제 토큰 암호화 저장소와 만료·철회 처리
 - [ ] 운영 publish 저장소 owner/repo와 코드 서명 인증서 설정

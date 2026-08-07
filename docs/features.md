@@ -6,7 +6,7 @@
 
 ## 2. 계정별 번호 라우팅
 
-YouTube·네이버·TikTok·Facebook·Instagram 계정을 연결하고, 계정 카드의 1~10 체크박스로 해당 슬롯 영상의 게시 대상을 고른다. 체크 상태는 `slotNumbers`로 저장한다.
+네이버·TikTok·Facebook·Instagram 계정을 연결하고, 계정 카드의 1~10 체크박스로 해당 슬롯 영상의 게시 대상을 고른다. 체크 상태는 `slotNumbers`로 저장한다.
 
 ## 3. 예약·전송 작업
 
@@ -30,4 +30,4 @@ mock provider가 조회수·좋아요·댓글을 만들며 통계 갱신, 댓글
 
 ## 8. 계정 로그인 페이지
 
-환경설정 아래에 Instagram, YouTube, 네이버 클립, Facebook 로그인 페이지를 제공한다. 각 페이지는 OAuth 권한과 연결 상태를 서비스별로 표시하고, sandbox에서는 기존 안전한 계정 식별자 연결 화면으로 이어진다.
+환경설정 아래에 Instagram, 네이버 클립, TikTok, Facebook 로그인 페이지를 제공한다. 각 페이지는 OAuth 권한과 연결 상태를 서비스별로 표시하고, sandbox에서는 기존 안전한 계정 식별자 연결 화면으로 이어진다.

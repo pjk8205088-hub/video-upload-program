@@ -19,7 +19,7 @@
 
 `id`, `provider`, `displayName`, `handle`, `status`, `mode`, `slotNumbers`, `connectedAt`을 가진다. `slotNumbers`가 해당 계정으로 보낼 영상 번호의 원본이다.
 
-지원 provider: `youtube`, `naver`, `tiktok`, `facebook`, `instagram`.
+지원 provider: `naver`, `tiktok`, `facebook`, `instagram`.
 
 ## Campaign / CampaignJob
 

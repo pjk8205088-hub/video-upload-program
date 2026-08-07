@@ -4,17 +4,14 @@ const state = {
 };
 
 const providers = {
-  youtube: { label: 'YouTube', code: 'YT' }, naver: { label: '네이버 클립', code: 'NV' }, tiktok: { label: 'TikTok', code: 'TT' }, facebook: { label: 'Facebook', code: 'FB' }, instagram: { label: 'Instagram', code: 'IG' }
+  naver: { label: '네이버 클립', code: 'NV' }, tiktok: { label: 'TikTok', code: 'TT' }, facebook: { label: 'Facebook', code: 'FB' }, instagram: { label: 'Instagram', code: 'IG' }
 };
+const supportedProviderKeys = new Set(Object.keys(providers));
 const loginProviders = [
   { key: 'instagram', label: 'Instagram', code: 'IG', service: 'Meta OAuth', accent: 'coral', title: 'Instagram Business 계정', description: '릴스와 피드 게시 권한을 연결합니다.', scopes: 'instagram_content_publish · instagram_basic' },
-  { key: 'youtube', label: 'YouTube', code: 'YT', service: 'Google OAuth', accent: 'red', title: 'YouTube 채널', description: '동영상 업로드와 예약 공개 권한을 연결합니다.', scopes: 'youtube.upload · youtube.readonly' },
   { key: 'tiktok', label: 'TikTok', code: 'TT', service: 'TikTok OAuth', accent: 'violet', title: 'TikTok 계정', description: '짧은 동영상 게시 권한을 연결합니다.', scopes: 'video.publish · user.info.basic' },
   { key: 'naver', label: '네이버 클립', code: 'NV', service: 'NAVER OAuth', accent: 'green', title: '네이버 클립 채널', description: '클립 콘텐츠 게시 권한을 연결합니다.', scopes: 'clip.publish · profile.read' },
   { key: 'facebook', label: 'Facebook', code: 'FB', service: 'Meta OAuth', accent: 'blue', title: 'Facebook 페이지', description: '페이지 동영상 게시와 댓글 관리 권한을 연결합니다.', scopes: 'pages_manage_posts · pages_read_engagement' }
-];
-const youtubeChecks = [
-  ['title', '제목 입력', false], ['description', '설명 입력', false], ['tags', '해시태그 확인', false], ['thumbnail', '썸네일 확인', true], ['madeForKids', '아동용 콘텐츠 여부', true]
 ];
 const allowedExtensions = new Set(['mp4', 'mov', 'webm', 'mkv']);
 const VIDEO_PROFILE = Object.freeze({ width: 1080, height: 1920, ratio: 9 / 16, durationSeconds: 60, videoBitrate: 8_000_000, audioBitrate: 128_000 });
@@ -265,13 +262,6 @@ function renderRouteSummary() {
   $('#selectedRouteList').innerHTML = grouped.length ? grouped.map(({ account, slot }) => `<div class="selected-route"><span>${String(slot).padStart(2, '0')}</span><strong>${providerFor(account.provider).code}</strong><small>${escapeHtml(account.handle)}</small></div>`).join('') : '<span class="muted">계정에서 번호를 체크하면 경로가 보입니다.</span>';
 }
 
-function renderYoutubeChecklist() {
-  const title = $('#campaignTitle').value.trim(); const description = $('#campaignDescription').value.trim(); const hashtags = $('#campaignHashtags').value.trim();
-  const automatic = { title: Boolean(title), description: Boolean(description), tags: /(^|\s)#\S+/.test(hashtags || description) };
-  $('#youtubeSummary').textContent = `자동 확인 ${Object.values(automatic).filter(Boolean).length}/3 · 수동 ${youtubeChecks.filter((item) => item[2]).length}`;
-  $('#youtubeChecklist').innerHTML = youtubeChecks.map(([key, label, manual]) => `<label class="check-row${manual ? ' manual' : ''}"><input type="checkbox" ${manual ? '' : automatic[key] ? 'checked' : ''} ${manual ? '' : 'disabled'}>${label}<small>${manual ? '수동' : automatic[key] ? '완료' : '필요'}</small></label>`).join('');
-}
-
 function statusLabel(status) { return ({ scheduled: '예약 대기', running: '처리 중', completed: '전체 성공', failed: '실패 있음', cancelled: '취소됨', queued: '대기', uploading: '전송 중', retrying: '재시도 대기', published: '게시 완료', failed: '실패' })[status] || status; }
 function renderCampaigns() {
   $('#campaignEmpty').hidden = state.campaigns.length > 0;
@@ -296,7 +286,7 @@ function renderComments() {
 
 function renderLogs() { $('#logsList').innerHTML = state.logs.length ? state.logs.slice(0, 40).map((log) => `<div class="log-row"><time>${formatDate(log.createdAt, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><b>${escapeHtml(log.event)}</b><span>${escapeHtml(log.message)}</span></div>`).join('') : '<div class="empty-inline">아직 기록된 작업이 없습니다.</div>'; }
 function renderSettings() { for (const key of ['launchAtStartup', 'startMinimized', 'autoUpdate']) $(`#${key}`).checked = Boolean(state.settings[key]); }
-function renderAll() { syncQuickProviders(); renderStats(); renderSlots(); renderAccounts(); renderLoginPages(); renderSidebarStatus(); renderQuickPublish(); renderYoutubeChecklist(); renderCampaigns(); renderCalendar(); renderAnalytics(); renderComments(); renderLogs(); renderSettings(); $('#lastUpdated').textContent = `마지막 동기화 ${formatDate(new Date(), { hour: '2-digit', minute: '2-digit' })}`; }
+function renderAll() { syncQuickProviders(); renderStats(); renderSlots(); renderAccounts(); renderLoginPages(); renderSidebarStatus(); renderQuickPublish(); renderCampaigns(); renderCalendar(); renderAnalytics(); renderComments(); renderLogs(); renderSettings(); $('#lastUpdated').textContent = `마지막 동기화 ${formatDate(new Date(), { hour: '2-digit', minute: '2-digit' })}`; }
 function filterWorkspace(query) {
   const normalized = String(query || '').trim().toLowerCase();
   ['.slot-card', '.account-card', '.campaign-card', '.login-page', '.comment-card'].forEach((selector) => {
@@ -307,7 +297,12 @@ function filterWorkspace(query) {
 async function loadData() {
   try {
     const [videos, accounts, campaigns, analytics, comments, logs, settings] = await Promise.all([api('/api/videos'), api('/api/accounts'), api('/api/campaigns'), api('/api/analytics'), api('/api/comments'), api('/api/logs?limit=80'), api('/api/settings')]);
-    state.videos = videos.videos || []; state.accounts = accounts.accounts || []; state.campaigns = campaigns.campaigns || []; state.analytics = analytics; state.comments = comments.comments || []; state.logs = logs.logs || []; state.settings = settings.settings || {};
+    state.videos = videos.videos || [];
+    state.accounts = (accounts.accounts || []).filter((account) => supportedProviderKeys.has(account.provider));
+    state.campaigns = (campaigns.campaigns || []).map((campaign) => ({ ...campaign, jobs: (campaign.jobs || []).filter((job) => supportedProviderKeys.has(job.provider)) })).filter((campaign) => campaign.jobs.length > 0);
+    state.analytics = { ...analytics, jobs: (analytics.jobs || []).filter((job) => supportedProviderKeys.has(job.provider)) };
+    state.comments = (comments.comments || []).filter((comment) => supportedProviderKeys.has(comment.provider));
+    state.logs = logs.logs || []; state.settings = settings.settings || {};
     state.quickProviders = new Set();
     if (!state.campaignsLoaded) { state.campaigns.flatMap((campaign) => campaign.jobs || []).filter((job) => job.status === 'published').forEach((job) => state.announcedJobs.add(job.id)); state.campaignsLoaded = true; }
     state.selectedSlot = state.videos.find((video) => video.slotNumber)?.slotNumber || 1; renderAll(); const source = videoForSlot(state.selectedSlot); if (source && !$('#campaignTitle').value) fillMetadata(source);
@@ -321,7 +316,6 @@ function fillMetadata(video) {
   if (!$('#campaignTitle').value.trim()) $('#campaignTitle').value = meta.title || fallbackTitle || '새 동영상';
   if (!$('#campaignDescription').value.trim()) $('#campaignDescription').value = meta.description || `${$('#campaignTitle').value.trim()} 업로드 설명`;
   if (!$('#campaignHashtags').value.trim()) $('#campaignHashtags').value = (meta.hashtags || ['#동영상', '#콘텐츠']).join(' ');
-  renderYoutubeChecklist();
 }
 async function generateAi() { const video = videoForSlot(state.selectedSlot); if (!video) return showToast('먼저 영상을 선택해 주세요.', true); try { const result = await api('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: video.id }) }); fillMetadata({ aiMetadata: result.metadata }); showToast(result.metadata.source === 'openai' ? 'OpenAI 초안을 적용했습니다.' : '로컬 fallback 초안을 적용했습니다.'); } catch (error) { showToast(error.message, true); } }
 
@@ -377,7 +371,7 @@ async function toggleRoute(input) { const account = state.accounts.find((item) =
 
 async function saveAccount(event) { event.preventDefault(); try { const result = await api('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: $('#accountProvider').value, displayName: $('#accountDisplayName').value, handle: $('#accountHandle').value }) }); state.accounts.unshift(result.account); const quickProvider = state.pendingQuickProvider; state.pendingQuickProvider = ''; if (quickProvider === result.account.provider && videoForSlot(state.selectedSlot)) { state.quickProviders.add(quickProvider); result.account.slotNumbers = [state.selectedSlot]; try { const routed = await api(`/api/accounts/${encodeURIComponent(result.account.id)}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: result.account.slotNumbers }) }); Object.assign(result.account, routed.account); } catch {} } closeAccountModal(); renderAll(); document.querySelector(`#login-${result.account.provider}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); showToast(`${providerFor(result.account.provider).label} 계정을 연결했습니다.`); } catch (error) { showToast(error.message, true); } }
 async function removeAccount(id) { const account = state.accounts.find((item) => item.id === id); if (!account || !window.confirm(`${account.handle} 연결을 해제할까요?`)) return; try { await api(`/api/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' }); state.accounts = state.accounts.filter((item) => item.id !== id); renderAll(); showToast('계정 연결을 해제했습니다.'); } catch (error) { showToast(error.message, true); } }
-function openAccountModal(providerKey = 'youtube') { const provider = providerFor(providerKey); $('#accountProvider').value = providerKey; $('#accountModalEyebrow').textContent = `${provider.code} / OAUTH LOGIN`; $('#accountModalTitle').textContent = `${provider.label} 로그인`; $('#accountModalDescription').textContent = `${provider.label} OAuth 연결을 시작합니다. sandbox에서는 계정 식별자만 저장하며 비밀번호는 저장하지 않습니다.`; $('#accountModal').hidden = false; $('#accountDisplayName').value = ''; $('#accountHandle').value = ''; $('#accountDisplayName').focus(); }
+function openAccountModal(providerKey = 'instagram') { const provider = providerFor(providerKey); $('#accountProvider').value = providerKey; $('#accountModalEyebrow').textContent = `${provider.code} / OAUTH LOGIN`; $('#accountModalTitle').textContent = `${provider.label} 로그인`; $('#accountModalDescription').textContent = `${provider.label} OAuth 연결을 시작합니다. sandbox에서는 계정 식별자만 저장하며 비밀번호는 저장하지 않습니다.`; $('#accountModal').hidden = false; $('#accountDisplayName').value = ''; $('#accountHandle').value = ''; $('#accountDisplayName').focus(); }
 function closeAccountModal() { $('#accountModal').hidden = true; }
 
 async function fillRememberedCredentials(providerKey) {
@@ -398,7 +392,7 @@ async function fillRememberedCredentials(providerKey) {
 }
 
 const openAccountModalBase = openAccountModal;
-openAccountModal = async function openAccountModalWithMemory(providerKey = 'youtube') {
+openAccountModal = async function openAccountModalWithMemory(providerKey = 'instagram') {
   openAccountModalBase(providerKey);
   $('#accountModalDescription').textContent = `${providerFor(providerKey).label} OAuth 연결을 시작합니다. 비밀번호는 서버에 저장하지 않고 이 PC의 암호화 저장소에만 기억합니다.`;
   $('#rememberAccount').checked = true;
@@ -468,7 +462,7 @@ document.addEventListener('click', (event) => {
   if (target.dataset.scrollTarget) document.querySelector(target.dataset.scrollTarget)?.scrollIntoView({ behavior: 'smooth' });
   if (target.dataset.windowAction && window.desktopWindow?.[target.dataset.windowAction]) window.desktopWindow[target.dataset.windowAction]();
 });
-document.addEventListener('change', (event) => { if (event.target.matches('[data-account-slot]')) toggleRoute(event.target); if (['#campaignTitle', '#campaignDescription', '#campaignHashtags'].includes(`#${event.target.id}`)) renderYoutubeChecklist(); if (['launchAtStartup', 'startMinimized', 'autoUpdate'].includes(event.target.id)) saveSetting(event.target.id, event.target.checked); });
+document.addEventListener('change', (event) => { if (event.target.matches('[data-account-slot]')) toggleRoute(event.target); if (['launchAtStartup', 'startMinimized', 'autoUpdate'].includes(event.target.id)) saveSetting(event.target.id, event.target.checked); });
 document.addEventListener('input', (event) => { if (event.target.id === 'workspaceSearch') filterWorkspace(event.target.value); });
 document.addEventListener('keydown', (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); $('#workspaceSearch')?.focus(); } });
 $('#chooseButton').addEventListener('click', (event) => { event.stopPropagation(); startFilePicker('auto'); });
@@ -478,7 +472,7 @@ $('#dropZone').addEventListener('keydown', (event) => { if (event.key === 'Enter
 ['dragleave', 'drop'].forEach((name) => $('#dropZone').addEventListener(name, (event) => { event.preventDefault(); $('#dropZone').classList.remove('is-dragging'); }));
 $('#dropZone').addEventListener('drop', (event) => handleSelectedFiles([...event.dataTransfer.files]));
 $('#fileInput').addEventListener('change', () => handleSelectedFiles([...$('#fileInput').files]));
-$('#campaignForm').addEventListener('submit', createCampaign); $('#generateAiButton').addEventListener('click', generateAi); $('#campaignTitle').addEventListener('input', renderYoutubeChecklist); $('#campaignDescription').addEventListener('input', renderYoutubeChecklist); $('#campaignHashtags').addEventListener('input', renderYoutubeChecklist);
+$('#campaignForm').addEventListener('submit', createCampaign); $('#generateAiButton').addEventListener('click', generateAi);
 $('#openAccountButton').addEventListener('click', openAccountModal); $('#accountForm').addEventListener('submit', saveAccountWithCredentials); $('#accountProvider').addEventListener('change', () => fillRememberedCredentials($('#accountProvider').value)); $('#closeAccountModal').addEventListener('click', closeAccountModal); $('#cancelAccountModal').addEventListener('click', closeAccountModal); $('#accountModal').addEventListener('click', (event) => { if (event.target.id === 'accountModal') closeAccountModal(); });
 $('#prevMonth').addEventListener('click', () => { state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() - 1, 1); renderCalendar(); }); $('#nextMonth').addEventListener('click', () => { state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() + 1, 1); renderCalendar(); }); $('#refreshAnalytics').addEventListener('click', refreshAnalytics); $('#refreshCampaigns').addEventListener('click', loadData); $('#refreshLogs').addEventListener('click', async () => { await loadInsights(); renderAll(); }); $('#checkUpdates').addEventListener('click', checkUpdates);
 const initialSchedule = new Date(Date.now() + 3600000); initialSchedule.setSeconds(0, 0); $('#scheduleDate').value = localInputValue(initialSchedule); const loginSecurityCopy = document.querySelector('.login-security-strip strong'); const loginSecurityNote = document.querySelector('.login-security-strip p'); if (loginSecurityCopy) loginSecurityCopy.textContent = '비밀번호는 암호화 저장소에만 보관됩니다.'; if (loginSecurityNote) loginSecurityNote.textContent = '현재는 sandbox 연결이며 비밀번호는 서버로 보내지지 않습니다. Electron에서는 운영체제 암호화 저장소에만 기억합니다.'; loadData();
