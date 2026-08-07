@@ -167,6 +167,53 @@ function renderSidebarStatus() {
   }).join('');
 }
 
+function renderQuickPublish() {
+  const target = $('#quickProviderBar');
+  if (!target) return;
+  target.innerHTML = loginProviders.map((item) => {
+    const linked = state.accounts.filter((account) => account.provider === item.key && account.status === 'connected');
+    const loggedIn = linked.length > 0;
+    const active = linked.some((account) => (account.slotNumbers || []).includes(state.selectedSlot));
+    const slots = Array.from({ length: 10 }, (_, index) => {
+      const slot = index + 1;
+      const ready = Boolean(videoForSlot(slot));
+      const selected = linked.some((account) => (account.slotNumbers || []).includes(slot));
+      const enabled = loggedIn && ready;
+      return `<button class="quick-slot-button${selected ? ' is-selected' : ''}${enabled ? '' : ' is-disabled'}" data-quick-slot-provider="${item.key}" data-slot-number="${slot}" type="button" aria-pressed="${selected}" ${enabled ? '' : 'disabled'} title="${enabled ? `${slot}번 영상을 ${item.label}에 ${selected ? '연결 해제' : '연결'}` : `${slot}번 영상 업로드 완료 후 선택 가능`}">${slot}${selected ? ' ✓' : ''}</button>`;
+    }).join('');
+    return `<article class="quick-provider-card"><button class="quick-provider${active ? ' is-active' : ''}${loggedIn ? '' : ' needs-login'}" data-quick-provider="${item.key}" type="button" aria-pressed="${active}"><span class="quick-provider-brand quick-brand-${item.accent}">${item.code}</span><span class="quick-provider-copy"><strong>${item.label}</strong><small>${loggedIn ? `${linked.length}개 계정 · 1~10번 선택` : '로그인 후 1~10번 활성화'}</small></span><span class="quick-provider-state"><i class="quick-login-light${loggedIn ? ' is-ready' : ' is-waiting'}"></i>${loggedIn ? '로그인 완료' : 'LOGIN'}</span><span class="quick-provider-check">${active ? '✓' : '+'}</span></button><div class="quick-slot-grid" aria-label="${item.label} 동영상 슬롯 선택">${slots}</div></article>`;
+  }).join('');
+  $('#quickPublishSummary').textContent = `활성 SNS ${state.quickProviders.size}개`;
+}
+
+async function toggleQuickProviderSlot(providerKey, slotNumber) {
+  const slot = Number(slotNumber);
+  const provider = providerFor(providerKey);
+  const video = videoForSlot(slot);
+  const accounts = state.accounts.filter((account) => account.provider === providerKey && account.status === 'connected');
+  if (!video) return showToast(`${slot}번 영상이 아직 업로드되지 않았습니다.`, true);
+  if (!accounts.length) { state.selectedSlot = slot; state.pendingQuickProvider = providerKey; return openAccountModal(providerKey); }
+  const previousSlots = new Map(accounts.map((account) => [account.id, [...(account.slotNumbers || [])]]));
+  const selected = accounts.every((account) => (previousSlots.get(account.id) || []).includes(slot));
+  accounts.forEach((account) => {
+    const slots = previousSlots.get(account.id) || [];
+    account.slotNumbers = selected ? slots.filter((item) => item !== slot) : [...new Set([...slots, slot])].sort((a, b) => a - b);
+  });
+  state.selectedSlot = slot;
+  renderAll();
+  try {
+    await Promise.all(accounts.map(async (account) => {
+      const result = await api(`/api/accounts/${encodeURIComponent(account.id)}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: account.slotNumbers }) });
+      Object.assign(account, result.account);
+    }));
+    showToast(`${provider.label} ${slot}번 영상 ${selected ? '연결 해제' : '업로드 준비'} 완료`);
+  } catch (error) {
+    accounts.forEach((account) => { account.slotNumbers = previousSlots.get(account.id) || []; });
+    renderAll();
+    showToast(error.message, true);
+  }
+}
+
 function renderStats() {
   const filled = state.videos.length;
   const views = state.analytics.totals?.views || 0;
@@ -373,6 +420,7 @@ document.addEventListener('click', (event) => {
   if (target.dataset.selectSlot) { state.selectedSlot = Number(target.dataset.selectSlot); const video = videoForSlot(state.selectedSlot); if (video && !$('#campaignTitle').value) fillMetadata(video); renderAll(); }
   if (target.dataset.deleteVideo) deleteVideo(target.dataset.deleteVideo);
   if (target.dataset.quickProvider) activateQuickProvider(target.dataset.quickProvider);
+  if (target.dataset.quickSlotProvider) toggleQuickProviderSlot(target.dataset.quickSlotProvider, target.dataset.slotNumber);
   if (target.dataset.loginProvider) openAccountModal(target.dataset.loginProvider);
   if (target.dataset.openAccount || target.id === 'openAccountButton') openAccountModal();
   if (target.dataset.removeAccount) removeAccount(target.dataset.removeAccount);
