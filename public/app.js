@@ -30,7 +30,7 @@ function videoForSlot(slot) { return state.videos.find((video) => video.slotNumb
 function showToast(message, isError = false) { const toast = $('#toast'); toast.textContent = message; toast.classList.toggle('is-error', isError); toast.classList.add('is-visible'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove('is-visible'), 3400); }
 async function api(url, options = {}) { const response = await fetch(url, options); const payload = await response.json().catch(() => ({})); if (!response.ok) throw Object.assign(new Error(payload.error?.message || '요청을 처리하지 못했습니다.'), { payload, status: response.status }); return payload; }
 
-function selectedRoutes() { return state.accounts.flatMap((account) => (account.slotNumbers || []).filter((slot) => videoForSlot(slot)).map((slotNumber) => ({ accountId: account.id, slotNumber }))); }
+function selectedRoutes() { return state.accounts.filter((account) => state.quickProviders.has(account.provider)).flatMap((account) => (account.slotNumbers || []).filter((slot) => videoForSlot(slot)).map((slotNumber) => ({ accountId: account.id, slotNumber }))); }
 function syncQuickProviders() { state.quickProviders = new Set(state.accounts.filter((account) => videoForSlot(state.selectedSlot) && (account.slotNumbers || []).includes(state.selectedSlot)).map((account) => account.provider)); }
 
 function renderQuickPublish() {
@@ -208,6 +208,12 @@ function renderComments() {
 function renderLogs() { $('#logsList').innerHTML = state.logs.length ? state.logs.slice(0, 40).map((log) => `<div class="log-row"><time>${formatDate(log.createdAt, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><b>${escapeHtml(log.event)}</b><span>${escapeHtml(log.message)}</span></div>`).join('') : '<div class="empty-inline">아직 기록된 작업이 없습니다.</div>'; }
 function renderSettings() { for (const key of ['launchAtStartup', 'startMinimized', 'autoUpdate']) $(`#${key}`).checked = Boolean(state.settings[key]); }
 function renderAll() { syncQuickProviders(); renderStats(); renderSlots(); renderAccounts(); renderLoginPages(); renderSidebarStatus(); renderQuickPublish(); renderYoutubeChecklist(); renderCampaigns(); renderCalendar(); renderAnalytics(); renderComments(); renderLogs(); renderSettings(); $('#lastUpdated').textContent = `마지막 동기화 ${formatDate(new Date(), { hour: '2-digit', minute: '2-digit' })}`; }
+function filterWorkspace(query) {
+  const normalized = String(query || '').trim().toLowerCase();
+  ['.slot-card', '.account-card', '.campaign-card', '.login-page', '.comment-card'].forEach((selector) => {
+    $$(selector).forEach((item) => item.classList.toggle('is-search-hidden', Boolean(normalized && !item.textContent.toLowerCase().includes(normalized))));
+  });
+}
 
 async function loadData() {
   try {
@@ -273,6 +279,8 @@ document.addEventListener('click', (event) => {
   if (target.dataset.windowAction && window.desktopWindow?.[target.dataset.windowAction]) window.desktopWindow[target.dataset.windowAction]();
 });
 document.addEventListener('change', (event) => { if (event.target.matches('[data-account-slot]')) toggleRoute(event.target); if (['#campaignTitle', '#campaignDescription', '#campaignHashtags'].includes(`#${event.target.id}`)) renderYoutubeChecklist(); if (['launchAtStartup', 'startMinimized', 'autoUpdate'].includes(event.target.id)) saveSetting(event.target.id, event.target.checked); });
+document.addEventListener('input', (event) => { if (event.target.id === 'workspaceSearch') filterWorkspace(event.target.value); });
+document.addEventListener('keydown', (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); $('#workspaceSearch')?.focus(); } });
 $('#chooseButton').addEventListener('click', (event) => { event.stopPropagation(); startFilePicker('auto'); });
 $('#dropZone').addEventListener('click', (event) => { if (!event.target.closest('button')) startFilePicker('auto'); });
 $('#dropZone').addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); startFilePicker('auto'); } });

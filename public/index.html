@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#101622">
+  <meta name="theme-color" content="#f5f6f8">
   <title>Upload Desk · 10-slot publishing board</title>
   <link rel="stylesheet" href="/styles.css">
   <style>[hidden]{display:none!important}</style>
@@ -12,12 +12,13 @@
   <div class="app-shell">
     <header class="titlebar">
       <div class="brand-lockup"><span class="brand-mark"><i></i><i></i><i></i></span><div><strong>UPLOAD DESK</strong><small>10-SLOT PUBLISHING BOARD</small></div></div>
+      <label class="global-search" for="workspaceSearch"><span aria-hidden="true">⌕</span><input id="workspaceSearch" type="search" placeholder="영상, 계정, 예약 검색" autocomplete="off"><kbd>CTRL K</kbd></label>
       <div class="titlebar-mode"><span class="led"></span><span>LOCAL / SANDBOX</span></div>
       <div class="window-controls" aria-label="창 제어"><button data-window-action="minimize" aria-label="최소화">—</button><button data-window-action="maximize" aria-label="최대화">□</button><button data-window-action="close" aria-label="닫기">×</button></div>
     </header>
     <div class="app-body">
       <aside class="sidebar">
-        <div class="side-kicker">CONTROL ROOM</div>
+        <div class="side-kicker">UPLOAD CENTER</div>
         <nav>
           <a class="nav-link is-active" href="#slots"><span>01</span>슬롯 보드<b id="navVideoCount">0/10</b></a>
           <a class="nav-link" href="#routing"><span>02</span>계정 라우팅<b id="navAccountCount">0</b></a>
@@ -40,12 +41,12 @@
       </aside>
 
       <main class="main-content">
-        <header class="topbar"><div><span class="eyebrow">WORKSPACE / MEDIA CONTROL</span><h1>오늘 보낼 영상의 경로를 정하세요.</h1><p>최대 10개의 원본을 슬롯에 고정하고, 계정별 번호 체크로 게시 대상을 조합합니다.</p></div><div class="top-actions"><span class="sandbox-pill"><i></i> MOCK ADAPTER ACTIVE</span><button class="button button-dark" data-scroll-target="#schedule">+ 예약 만들기</button></div></header>
+        <header class="topbar"><div><span class="eyebrow">MY UPLOAD WORKSPACE</span><h1>영상 등록부터 게시까지 한 번에 관리하세요.</h1><p>슬롯에 영상을 보관하고, 원하는 채널에 번호를 연결해 예약을 완료합니다.</p></div><div class="top-actions"><span class="sandbox-pill"><i></i> MOCK ADAPTER ACTIVE</span><button class="button button-dark" data-scroll-target="#schedule">+ 예약 만들기</button></div></header>
 
-        <section class="stats-row" aria-label="작업 요약"><article><span>채워진 슬롯</span><strong id="statVideoCount">0</strong><small>10개 중</small></article><article><span>연결 계정</span><strong id="statAccountCount">0</strong><small>5개 서비스</small></article><article class="accent-stat"><span>예약 · 진행</span><strong id="statCampaignCount">0</strong><small>라우팅 작업</small></article><article><span>게시 조회수</span><strong id="statViewCount">0</strong><small>mock analytics</small></article></section>
+        <section class="stats-row" aria-label="작업 요약"><article><span>보관 영상</span><strong id="statVideoCount">0</strong><small>10개 슬롯 중</small></article><article><span>연결 채널</span><strong id="statAccountCount">0</strong><small>5개 서비스</small></article><article class="accent-stat"><span>예약 작업</span><strong id="statCampaignCount">0</strong><small>전송 준비 중</small></article><article><span>누적 조회수</span><strong id="statViewCount">0</strong><small>게시 후 자동 집계</small></article></section>
 
         <section class="panel" id="slots">
-          <div class="panel-head"><div><span class="eyebrow">01 / MEDIA SLOTS</span><h2>10-slot source board</h2><p>각 원본은 한 번 배정된 번호를 유지합니다. 슬롯을 교체하면 연결된 미게시 작업은 자동 취소됩니다.</p></div><div class="panel-tools"><span class="count-chip"><b id="slotCount">0</b> / 10 FILLED</span><button class="button button-lime" data-upload-slot="auto">+ 동영상 추가</button></div></div>
+          <div class="panel-head"><div><span class="eyebrow">01 / VIDEO STORAGE</span><h2>내 영상 보관함</h2><p>영상마다 고정 번호를 부여합니다. 슬롯을 교체하면 연결된 미게시 작업은 자동 취소됩니다.</p></div><div class="panel-tools"><span class="count-chip"><b id="slotCount">0</b> / 10 보관</span><button class="button button-lime" data-upload-slot="auto">+ 동영상 추가</button></div></div>
           <div id="slotGrid" class="slot-grid"></div>
           <div class="drop-strip" id="dropZone" tabindex="0" role="button" aria-label="동영상 여러 개 추가"><div class="drop-icon">↥</div><div><strong>여기에 동영상을 놓으세요</strong><span>비어 있는 슬롯부터 순서대로 저장 · MP4 / MOV / WebM / MKV · 파일당 최대 2 GB</span></div><button class="button button-dark" id="chooseButton" type="button">파일 선택</button><input id="fileInput" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.webm,.mkv" multiple hidden></div>
           <div id="queueSection" class="upload-queue" hidden><div class="eyebrow">LIVE UPLOAD QUEUE <span id="queueCount">0</span></div><div id="queueList"></div></div>
