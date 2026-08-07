@@ -127,6 +127,18 @@ function renderSidebarStatus() {
   statuses.forEach(({ ready, light, status, code, readyText, waitText }) => { $(light)?.classList.toggle('is-ready', ready); $(light)?.classList.toggle('is-waiting', !ready); $(status).textContent = ready ? readyText : waitText; $(code).textContent = ready ? 'BLUE' : 'RED'; $(code).classList.toggle('is-ready', ready); $(code).classList.toggle('is-waiting', !ready); });
 }
 
+function renderSidebarStatus() {
+  const target = document.querySelector('.status-inline-row');
+  if (!target) return;
+  const rows = loginProviders.map((item) => {
+    const ready = state.accounts.some((account) => account.provider === item.key && account.status === 'connected');
+    return `<a class="status-inline-item status-all-item" href="#login-${item.key}" aria-label="${item.label} 로그인 상태"><span class="status-light${ready ? ' is-ready' : ' is-waiting'}"></span><span><strong>${item.label}</strong><small>${ready ? '로그인 완료' : '로그인 필요'}</small></span><b class="${ready ? 'is-ready' : 'is-waiting'}">${ready ? 'GREEN' : 'RED'}</b></a>`;
+  });
+  const uploadReady = state.videos.length > 0 && selectedRoutes().length > 0;
+  rows.push(`<a class="status-inline-item status-all-item" href="#slots" aria-label="업로드 준비 상태"><span class="status-light${uploadReady ? ' is-ready' : ' is-waiting'}"></span><span><strong>업로드 준비</strong><small>${uploadReady ? '영상·라우팅 준비 완료' : '영상·라우팅 확인 필요'}</small></span><b class="${uploadReady ? 'is-ready' : 'is-waiting'}">${uploadReady ? 'GREEN' : 'RED'}</b></a>`);
+  target.innerHTML = rows.join('');
+}
+
 function renderStats() {
   const filled = state.videos.length;
   const views = state.analytics.totals?.views || 0;
