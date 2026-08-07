@@ -249,6 +249,61 @@ async function removeAccount(id) { const account = state.accounts.find((item) =>
 function openAccountModal(providerKey = 'youtube') { const provider = providerFor(providerKey); $('#accountProvider').value = providerKey; $('#accountModalEyebrow').textContent = `${provider.code} / OAUTH LOGIN`; $('#accountModalTitle').textContent = `${provider.label} 로그인`; $('#accountModalDescription').textContent = `${provider.label} OAuth 연결을 시작합니다. sandbox에서는 계정 식별자만 저장하며 비밀번호는 저장하지 않습니다.`; $('#accountModal').hidden = false; $('#accountDisplayName').value = ''; $('#accountHandle').value = ''; $('#accountDisplayName').focus(); }
 function closeAccountModal() { $('#accountModal').hidden = true; }
 
+async function fillRememberedCredentials(providerKey) {
+  if (!window.desktopWindow?.getSavedCredentials) return;
+  try {
+    const saved = await window.desktopWindow.getSavedCredentials(providerKey);
+    if ($('#accountProvider').value !== providerKey) return;
+    if (saved?.saved) {
+      $('#accountDisplayName').value = saved.displayName || '';
+      $('#accountHandle').value = saved.handle || '';
+      $('#accountPassword').value = saved.password || '';
+      $('#rememberAccount').checked = true;
+    } else {
+      $('#accountPassword').value = '';
+      $('#rememberAccount').checked = true;
+    }
+  } catch {}
+}
+
+const openAccountModalBase = openAccountModal;
+openAccountModal = async function openAccountModalWithMemory(providerKey = 'youtube') {
+  openAccountModalBase(providerKey);
+  $('#accountModalDescription').textContent = `${providerFor(providerKey).label} OAuth 연결을 시작합니다. 비밀번호는 서버에 저장하지 않고 이 PC의 암호화 저장소에만 기억합니다.`;
+  $('#rememberAccount').checked = true;
+  await fillRememberedCredentials(providerKey);
+};
+
+async function saveAccountWithCredentials(event) {
+  event.preventDefault();
+  const provider = $('#accountProvider').value;
+  const displayName = $('#accountDisplayName').value.trim();
+  const handle = $('#accountHandle').value.trim();
+  const password = $('#accountPassword').value;
+  const remember = $('#rememberAccount').checked;
+  try {
+    const result = await api('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, displayName, handle }) });
+    if (window.desktopWindow?.saveCredentials) {
+      try { await window.desktopWindow.saveCredentials({ provider, displayName, handle, password, remember }); } catch {}
+    }
+    state.accounts.unshift(result.account);
+    const quickProvider = state.pendingQuickProvider;
+    state.pendingQuickProvider = '';
+    if (quickProvider === result.account.provider && videoForSlot(state.selectedSlot)) {
+      state.quickProviders.add(quickProvider);
+      result.account.slotNumbers = [state.selectedSlot];
+      try {
+        const routed = await api(`/api/accounts/${encodeURIComponent(result.account.id)}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: result.account.slotNumbers }) });
+        Object.assign(result.account, routed.account);
+      } catch {}
+    }
+    closeAccountModal();
+    renderAll();
+    document.querySelector(`#login-${result.account.provider}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    showToast(`${providerFor(result.account.provider).label} 계정을 연결했습니다.${remember ? ' 로그인 정보가 기억되었습니다.' : ''}`);
+  } catch (error) { showToast(error.message, true); }
+}
+
 async function createCampaign(event) { event.preventDefault(); const routes = selectedRoutes(); if (!routes.length) return showToast('먼저 올릴 SNS를 클릭해 활성화하고 영상 번호를 선택해 주세요.', true); const schedule = $('#scheduleDate').value; if (!schedule) return showToast('예약 시각을 선택해 주세요.', true); try { const hashtags = $('#campaignHashtags').value.split(/\s+/).map((value) => value.trim()).filter(Boolean); const result = await api('/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: $('#campaignTitle').value, description: $('#campaignDescription').value, hashtags, scheduledAt: schedule, privacy: $('#privacySelect').value, routes }) }); state.campaigns.unshift(result.campaign); $('#campaignForm').reset(); const next = new Date(Date.now() + 3600000); next.setSeconds(0, 0); $('#scheduleDate').value = localInputValue(next); renderAll(); showToast(`${result.campaign.jobs.length}개 번호 경로를 예약했습니다.`); if (result.skippedRoutes?.length) showToast(`${result.skippedRoutes.length}개 중복 경로는 건너뛰었습니다.`, true); } catch (error) { showToast(error.message, true); } }
 async function runCampaign(id) { try { const result = await api(`/api/campaigns/${encodeURIComponent(id)}/run`, { method: 'POST' }); const index = state.campaigns.findIndex((campaign) => campaign.id === id); if (index >= 0) state.campaigns[index] = result.campaign; await loadInsights(); renderAll(); showToast('작업을 sandbox에서 실행했습니다.'); announcePublishedJobs(result.campaign); } catch (error) { showToast(error.message, true); } }
 async function retryJob(id) { try { const result = await api(`/api/jobs/${encodeURIComponent(id)}/retry`, { method: 'POST' }); const index = state.campaigns.findIndex((campaign) => campaign.id === result.campaign.id); if (index >= 0) state.campaigns[index] = result.campaign; await loadInsights(); renderAll(); showToast('작업을 재시도했습니다.'); announcePublishedJobs(result.campaign); } catch (error) { showToast(error.message, true); } }
@@ -289,7 +344,7 @@ $('#dropZone').addEventListener('keydown', (event) => { if (event.key === 'Enter
 $('#dropZone').addEventListener('drop', (event) => handleSelectedFiles([...event.dataTransfer.files]));
 $('#fileInput').addEventListener('change', () => handleSelectedFiles([...$('#fileInput').files]));
 $('#campaignForm').addEventListener('submit', createCampaign); $('#generateAiButton').addEventListener('click', generateAi); $('#campaignTitle').addEventListener('input', renderYoutubeChecklist); $('#campaignDescription').addEventListener('input', renderYoutubeChecklist); $('#campaignHashtags').addEventListener('input', renderYoutubeChecklist);
-$('#openAccountButton').addEventListener('click', openAccountModal); $('#accountForm').addEventListener('submit', saveAccount); $('#closeAccountModal').addEventListener('click', closeAccountModal); $('#cancelAccountModal').addEventListener('click', closeAccountModal); $('#accountModal').addEventListener('click', (event) => { if (event.target.id === 'accountModal') closeAccountModal(); });
+$('#openAccountButton').addEventListener('click', openAccountModal); $('#accountForm').addEventListener('submit', saveAccountWithCredentials); $('#accountProvider').addEventListener('change', () => fillRememberedCredentials($('#accountProvider').value)); $('#closeAccountModal').addEventListener('click', closeAccountModal); $('#cancelAccountModal').addEventListener('click', closeAccountModal); $('#accountModal').addEventListener('click', (event) => { if (event.target.id === 'accountModal') closeAccountModal(); });
 $('#prevMonth').addEventListener('click', () => { state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() - 1, 1); renderCalendar(); }); $('#nextMonth').addEventListener('click', () => { state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() + 1, 1); renderCalendar(); }); $('#refreshAnalytics').addEventListener('click', refreshAnalytics); $('#refreshCampaigns').addEventListener('click', loadData); $('#refreshLogs').addEventListener('click', async () => { await loadInsights(); renderAll(); }); $('#checkUpdates').addEventListener('click', checkUpdates);
 const initialSchedule = new Date(Date.now() + 3600000); initialSchedule.setSeconds(0, 0); $('#scheduleDate').value = localInputValue(initialSchedule); loadData();
 async function pollCampaigns() { if (!state.campaignsLoaded) return; try { const payload = await api('/api/campaigns'); state.campaigns = payload.campaigns || []; state.campaigns.forEach(announcePublishedJobs); renderStats(); renderCampaigns(); renderCalendar(); } catch {} }

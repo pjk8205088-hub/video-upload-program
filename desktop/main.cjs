@@ -1,7 +1,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
-const { app, BrowserWindow, Menu, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage } = require('electron');
 
 let createServer;
 let ensureStorage;
@@ -17,6 +17,9 @@ if (!hasAppLock) app.quit();
 
 function settingsFile() { return path.join(app.getPath('userData'), 'storage', 'data', 'settings.json'); }
 function readSettings() { try { return JSON.parse(fs.readFileSync(settingsFile(), 'utf8')); } catch { return { launchAtStartup: false, startMinimized: false, autoUpdate: true }; } }
+function credentialsFile() { return path.join(app.getPath('userData'), 'secure', 'login-credentials.json'); }
+function readCredentialVault() { try { return JSON.parse(fs.readFileSync(credentialsFile(), 'utf8')); } catch { return { version: 1, providers: {} }; } }
+function writeCredentialVault(vault) { fs.mkdirSync(path.dirname(credentialsFile()), { recursive: true }); fs.writeFileSync(credentialsFile(), JSON.stringify(vault, null, 2), 'utf8'); }
 
 function reportStartupError(error) {
   const message = error?.stack || String(error);
@@ -45,6 +48,32 @@ function registerIpc() {
       child.once('error', () => resolve({ supported: false }));
       child.once('close', () => resolve({ supported: true }));
     });
+  });
+  ipcMain.handle('credentials:get', (_event, provider) => {
+    if (!provider || !safeStorage.isEncryptionAvailable()) return { supported: false };
+    const entry = readCredentialVault().providers[String(provider)];
+    if (!entry?.ciphertext) return { supported: true, saved: false };
+    try {
+      const value = JSON.parse(safeStorage.decryptString(Buffer.from(entry.ciphertext, 'base64')));
+      return { supported: true, saved: true, displayName: value.displayName || '', handle: value.handle || '', password: value.password || '' };
+    } catch { return { supported: true, saved: false }; }
+  });
+  ipcMain.handle('credentials:save', (_event, payload = {}) => {
+    const provider = String(payload.provider || '').trim().toLowerCase();
+    const vault = readCredentialVault();
+    if (!provider) return { supported: false, saved: false };
+    if (!payload.remember) { delete vault.providers[provider]; writeCredentialVault(vault); return { supported: true, saved: false, cleared: true }; }
+    if (!safeStorage.isEncryptionAvailable() || !String(payload.password || '').trim()) return { supported: safeStorage.isEncryptionAvailable(), saved: false };
+    const value = JSON.stringify({ displayName: String(payload.displayName || '').trim(), handle: String(payload.handle || '').trim(), password: String(payload.password) });
+    vault.providers[provider] = { ciphertext: safeStorage.encryptString(value).toString('base64'), savedAt: new Date().toISOString() };
+    writeCredentialVault(vault);
+    return { supported: true, saved: true };
+  });
+  ipcMain.handle('credentials:clear', (_event, provider) => {
+    const vault = readCredentialVault();
+    if (provider) delete vault.providers[String(provider).trim().toLowerCase()];
+    writeCredentialVault(vault);
+    return { cleared: true };
   });
 }
 
