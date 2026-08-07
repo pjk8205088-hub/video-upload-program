@@ -155,6 +155,18 @@ function renderSidebarStatus() {
   target.innerHTML = rows.join('');
 }
 
+function renderSidebarStatus() {
+  const target = document.querySelector('.status-inline-row');
+  if (!target) return;
+  target.innerHTML = loginProviders.map((item) => {
+    const linkedAccounts = state.accounts.filter((account) => account.provider === item.key && account.status === 'connected');
+    const loggedIn = linkedAccounts.length > 0;
+    const uploadReady = loggedIn && Boolean(videoForSlot(state.selectedSlot)) && linkedAccounts.some((account) => (account.slotNumbers || []).includes(state.selectedSlot));
+    const chip = (label, ready) => `<span class="status-state-chip${ready ? ' is-ready' : ' is-waiting'}"><i class="status-check-light${ready ? ' is-ready' : ' is-waiting'}"></i>${label}<b>${ready ? 'GREEN' : 'RED'}</b></span>`;
+    return `<a class="status-inline-item status-all-item status-sns-single-row" href="#login-${item.key}" aria-label="${item.label} 로그인 및 업로드 준비 상태"><span class="status-light${loggedIn ? ' is-ready' : ' is-waiting'}"></span><span class="status-sns-name"><strong>${item.label}</strong></span>${chip('로그인', loggedIn)}${chip('업로드 준비', uploadReady)}</a>`;
+  }).join('');
+}
+
 function renderStats() {
   const filled = state.videos.length;
   const views = state.analytics.totals?.views || 0;
