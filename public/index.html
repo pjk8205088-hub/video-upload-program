@@ -25,8 +25,16 @@
           <a class="nav-link" href="#insights"><span>04</span>통계 · 댓글</a>
           <a class="nav-link" href="#library"><span>05</span>활동 로그</a>
           <a class="nav-link" href="#settings"><span>06</span>환경설정</a>
+          <div class="nav-submenu" aria-label="계정 로그인">
+            <a class="nav-sub-link" href="#login-instagram"><i>IG</i><span>Instagram 로그인</span></a>
+            <a class="nav-sub-link" href="#login-youtube"><i>YT</i><span>YouTube 로그인</span></a>
+            <a class="nav-sub-link" href="#login-tiktok"><i>TT</i><span>TikTok 로그인</span></a>
+            <a class="nav-sub-link" href="#login-naver"><i>NV</i><span>네이버 클립 로그인</span></a>
+            <a class="nav-sub-link" href="#login-facebook"><i>FB</i><span>Facebook 로그인</span></a>
+          </div>
         </nav>
         <div class="sidebar-note"><span class="eyebrow">ROUTING RULE</span><strong>번호가 곧 목적지입니다.</strong><p>계정의 1~10 번호를 체크하면 해당 슬롯 영상만 그 채널로 이동합니다.</p></div>
+        <div class="sidebar-status" aria-label="운영 상태"><div class="sidebar-status-head"><span class="eyebrow">OPERATIONS STATUS</span><span class="status-pulse"></span></div><a class="status-row" href="#login-instagram"><span class="status-light" id="instagramLoginLight"></span><span><strong>Instagram 로그인</strong><small id="instagramLoginStatus">연결 필요</small></span><b id="instagramLoginCode">RED</b></a><a class="status-row" href="#slots"><span class="status-light" id="uploadReadyLight"></span><span><strong>업로드 준비</strong><small id="uploadReadyStatus">영상·라우팅 확인 필요</small></span><b id="uploadReadyCode">RED</b></a></div>
         <div class="storage-meter"><div><span>LOCAL STORAGE</span><b id="storagePercent">0%</b></div><div class="meter"><i id="storageBar"></i></div><small id="storageLabel">0 B / 10 GB 사용 중</small></div>
         <div class="side-footer"><span class="avatar">U</span><div><strong>업로드 관리자</strong><small>Windows workspace</small></div></div>
       </aside>
@@ -49,6 +57,8 @@
           <div class="route-summary"><div><span class="eyebrow">CURRENT ROUTES</span><strong id="routeSummary">0개 경로 선택</strong></div><div id="routeChips" class="route-chips"></div></div>
         </section>
 
+        <section class="panel quick-publish-panel" id="quick-publish"><div class="panel-head compact"><div><span class="eyebrow">03 / QUICK DESTINATION</span><h2>올릴 SNS를 먼저 고르세요</h2><p>현재 선택한 슬롯을 연결할 SNS를 클릭하면 활성화됩니다. 계정이 없으면 해당 로그인 페이지를 바로 엽니다.</p></div><span class="voice-badge"><i></i> 음성 완료 알림 ON</span></div><div id="quickProviderBar" class="quick-provider-bar"></div><div class="quick-publish-footer"><span><b id="quickPublishSummary">활성 SNS 0개</b> · 활성화 후 아래에서 예약을 만들면 선택한 번호가 전송됩니다.</span><span class="quick-voice-note">게시 완료 시 “Instagram에 동영상 1번이 업로드되었습니다”라고 안내합니다.</span></div></section>
+
         <section class="panel" id="schedule">
           <div class="panel-head"><div><span class="eyebrow">03 / SCHEDULE & DISPATCH</span><h2>번호로 예약 만들기</h2><p>선택된 번호와 계정의 조합마다 독립된 업로드 작업이 생깁니다. 예약 시각 이후 sandbox adapter가 동시에 처리합니다.</p></div><span class="mode-badge"><i></i> OAUTH SEAM READY</span></div>
           <div class="schedule-layout">
@@ -63,6 +73,7 @@
             </form>
           </div>
           <div class="panel-subhead"><span class="eyebrow">OUTBOX</span><strong>예약 · 전송 작업</strong><button class="button button-ghost" id="refreshCampaigns" type="button">새로고침</button></div>
+          <div id="uploadNotice" class="upload-notice" hidden aria-live="polite"><span class="upload-notice-icon">◉</span><div><span class="eyebrow">UPLOAD VOICE STATUS</span><strong id="uploadNoticeText">업로드 상태를 기다리는 중입니다.</strong><small>완료된 채널마다 한국어 안내 음성이 재생됩니다.</small></div><span class="upload-notice-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span></div>
           <div id="campaignList" class="campaign-list"></div><div id="campaignEmpty" class="empty-inline">아직 예약 작업이 없습니다.</div>
         </section>
 
@@ -77,12 +88,14 @@
 
         <section class="panel" id="settings"><div class="panel-head compact"><div><span class="eyebrow">08 / DESKTOP SETTINGS</span><h2>Windows 백그라운드 · 업데이트</h2><p>Electron 앱에서만 Windows 시작 설정이 실제 로그인 항목에 적용됩니다. 브라우저에서는 설정만 저장합니다.</p></div></div><div class="settings-grid"><label class="setting-row"><span><strong>Windows 시작 시 실행</strong><small>로그인 후 Upload Desk를 자동으로 시작</small></span><input id="launchAtStartup" type="checkbox"></label><label class="setting-row"><span><strong>시작 시 백그라운드</strong><small>창을 띄우지 않고 로컬 스케줄러부터 시작</small></span><input id="startMinimized" type="checkbox"></label><label class="setting-row"><span><strong>자동 업데이트 확인</strong><small>Electron Builder publish 채널에서 새 버전을 확인</small></span><input id="autoUpdate" type="checkbox"></label></div><div class="settings-actions"><span id="updateStatus">설정은 로컬 workspace에 저장됩니다.</span><button class="button button-dark" id="checkUpdates" type="button">업데이트 확인</button></div></section>
 
+        <section class="panel login-panel" id="account-login"><div class="panel-head"><div><span class="eyebrow">09 / ACCOUNT LOGIN PAGES</span><h2>SNS 계정 로그인</h2><p>서비스별 OAuth 로그인 페이지입니다. 로그인한 계정은 아래의 번호 라우팅에서 게시 슬롯을 선택할 수 있습니다.</p></div><span class="mode-badge"><i></i> SANDBOX AUTH READY</span></div><div id="loginPageGrid" class="login-page-grid"></div><div class="login-security-strip"><span class="security-mark">↗</span><div><strong>비밀번호는 Upload Desk에 저장되지 않습니다.</strong><p>실서비스 전환 시 각 서비스의 OAuth 권한 화면과 callback만 연결합니다. 현재 버튼은 sandbox 계정 식별자 저장 화면을 엽니다.</p></div><span class="security-code">OAUTH / TOKEN SEAM</span></div></section>
+
         <footer class="footer"><span>UPLOAD DESK · LOCAL MEDIA WORKSPACE</span><span id="lastUpdated">마지막 동기화 —</span></footer>
       </main>
     </div>
   </div>
 
-  <div id="accountModal" class="modal-backdrop" hidden><div class="modal" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle"><button class="modal-close" id="closeAccountModal" type="button" aria-label="닫기">×</button><span class="eyebrow">CONNECT DESTINATION</span><h2 id="accountModalTitle">SNS 계정 연결</h2><p>현재는 계정 식별자만 저장하는 sandbox 모드입니다. 실제 게시 adapter에서는 OAuth 토큰 교환 지점을 별도로 연결합니다.</p><form id="accountForm"><label>서비스<select id="accountProvider"><option value="youtube">YouTube</option><option value="naver">네이버</option><option value="tiktok">TikTok</option><option value="facebook">Facebook</option><option value="instagram">Instagram</option></select></label><label>표시 이름<input id="accountDisplayName" placeholder="예: 브랜드 공식 채널" required></label><label>아이디 또는 채널 핸들<input id="accountHandle" placeholder="예: @brand_channel" required></label><div class="modal-actions"><button class="button button-outline" id="cancelAccountModal" type="button">취소</button><button class="button button-lime" type="submit">sandbox 연결</button></div></form></div></div>
+  <div id="accountModal" class="modal-backdrop" hidden><div class="modal" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle"><button class="modal-close" id="closeAccountModal" type="button" aria-label="닫기">×</button><span class="eyebrow" id="accountModalEyebrow">CONNECT DESTINATION</span><h2 id="accountModalTitle">SNS 계정 연결</h2><p id="accountModalDescription">현재는 계정 식별자만 저장하는 sandbox 모드입니다. 실제 게시 adapter에서는 OAuth 토큰 교환 지점을 별도로 연결합니다.</p><form id="accountForm"><label>서비스<select id="accountProvider"><option value="youtube">YouTube</option><option value="naver">네이버 클립</option><option value="tiktok">TikTok</option><option value="facebook">Facebook</option><option value="instagram">Instagram</option></select></label><label>표시 이름<input id="accountDisplayName" placeholder="예: 브랜드 공식 채널" required></label><label>아이디 또는 채널 핸들<input id="accountHandle" placeholder="예: @brand_channel" required></label><div class="modal-actions"><button class="button button-outline" id="cancelAccountModal" type="button">취소</button><button class="button button-lime" type="submit">sandbox 연결</button></div></form></div></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/app.js"></script>
 </body>

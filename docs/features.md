@@ -27,3 +27,7 @@ mock provider가 조회수·좋아요·댓글을 만들며 통계 갱신, 댓글
 ## 7. 데스크톱 운영
 
 예약 캘린더, 활동 로그, Windows 로그인 시작·백그라운드 옵션, Electron Builder NSIS/portable 빌드, electron-updater 확인 IPC를 제공한다.
+
+## 8. 계정 로그인 페이지
+
+환경설정 아래에 Instagram, YouTube, 네이버 클립, Facebook 로그인 페이지를 제공한다. 각 페이지는 OAuth 권한과 연결 상태를 서비스별로 표시하고, sandbox에서는 기존 안전한 계정 식별자 연결 화면으로 이어진다.

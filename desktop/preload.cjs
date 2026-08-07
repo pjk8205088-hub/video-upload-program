@@ -5,5 +5,6 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   maximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),
   setStartup: (launchAtStartup, startMinimized) => ipcRenderer.invoke('settings:set-startup', launchAtStartup, startMinimized),
-  checkForUpdates: () => ipcRenderer.invoke('updates:check')
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+  speak: (text) => ipcRenderer.invoke('speech:speak', text)
 });

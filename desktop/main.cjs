@@ -1,5 +1,6 @@
 const path = require('node:path');
 const fs = require('node:fs');
+const { spawn } = require('node:child_process');
 const { app, BrowserWindow, Menu, dialog, ipcMain } = require('electron');
 
 let createServer;
@@ -9,8 +10,8 @@ let localServer;
 let autoUpdater;
 
 app.setName('Upload Desk');
-if (process.platform === 'win32') app.setAppUserModelId('com.uploaddesk.desktop.v2');
-app.setPath('userData', path.join(app.getPath('appData'), 'upload-desk'));
+if (process.platform === 'win32') app.setAppUserModelId('com.uploaddesk.desktop.v3');
+app.setPath('userData', path.join(app.getPath('appData'), 'upload-desk-v3'));
 const hasAppLock = app.requestSingleInstanceLock();
 if (!hasAppLock) app.quit();
 
@@ -34,6 +35,16 @@ function registerIpc() {
   ipcMain.handle('updates:check', async () => {
     if (!app.isPackaged || !autoUpdater) return { status: 'browser-sandbox' };
     try { await autoUpdater.checkForUpdatesAndNotify(); return { status: 'checked' }; } catch (error) { return { status: 'error', message: error.message }; }
+  });
+  ipcMain.handle('speech:speak', (_event, text) => {
+    if (process.platform !== 'win32' || !String(text || '').trim()) return { supported: false };
+    const script = "$ErrorActionPreference='SilentlyContinue'; Add-Type -AssemblyName System.Speech; $synth=New-Object System.Speech.Synthesis.SpeechSynthesizer; $female=$synth.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Gender.ToString() -eq 'Female' } | Select-Object -First 1; if ($female) { $synth.SelectVoice($female.VoiceInfo.Name) }; $synth.Rate=0; $synth.Volume=100; $synth.Speak([Console]::In.ReadToEnd()); $synth.Dispose();";
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { windowsHide: true, stdio: ['pipe', 'ignore', 'ignore'] });
+    child.stdin.end(String(text).slice(0, 300));
+    return new Promise((resolve) => {
+      child.once('error', () => resolve({ supported: false }));
+      child.once('close', () => resolve({ supported: true }));
+    });
   });
 }
 

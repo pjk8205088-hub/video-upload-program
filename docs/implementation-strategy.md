@@ -4,6 +4,7 @@
 
 ```text
 public/                 슬롯 보드 UI, 캘린더, 통계·댓글 화면
+                         환경설정 하위 provider 로그인 페이지
 server.js               로컬 HTTP API, scheduler, 영속화
 lib/ai.js               OpenAI 지점 + local fallback
 lib/thumbnail.js        SVG thumbnail generator
