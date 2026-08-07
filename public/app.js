@@ -17,7 +17,9 @@ const youtubeChecks = [
   ['title', '제목 입력', false], ['description', '설명 입력', false], ['tags', '해시태그 확인', false], ['thumbnail', '썸네일 확인', true], ['madeForKids', '아동용 콘텐츠 여부', true]
 ];
 const allowedExtensions = new Set(['mp4', 'mov', 'webm', 'mkv']);
-const maxFileSize = 2 * 1024 * 1024 * 1024;
+const VIDEO_PROFILE = Object.freeze({ width: 1080, height: 1920, ratio: 9 / 16, durationSeconds: 60, videoBitrate: 8_000_000, audioBitrate: 128_000 });
+const estimatedProfileBytes = Math.ceil(((VIDEO_PROFILE.videoBitrate + VIDEO_PROFILE.audioBitrate) / 8) * VIDEO_PROFILE.durationSeconds);
+const maxFileSize = Math.ceil(estimatedProfileBytes * 1.1);
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
@@ -181,7 +183,7 @@ function renderQuickPublish() {
       const enabled = loggedIn && ready;
       return `<button class="quick-slot-button${selected ? ' is-selected' : ''}${enabled ? '' : ' is-disabled'}" data-quick-slot-provider="${item.key}" data-slot-number="${slot}" type="button" aria-pressed="${selected}" ${enabled ? '' : 'disabled'} title="${enabled ? `${slot}번 영상을 ${item.label}에 ${selected ? '연결 해제' : '연결'}` : `${slot}번 영상 업로드 완료 후 선택 가능`}">${slot}${selected ? ' ✓' : ''}</button>`;
     }).join('');
-    return `<article class="quick-provider-card"><button class="quick-provider${active ? ' is-active' : ''}${loggedIn ? '' : ' needs-login'}" data-quick-provider="${item.key}" type="button" aria-pressed="${active}"><span class="quick-provider-brand quick-brand-${item.accent}">${item.code}</span><span class="quick-provider-copy"><strong>${item.label}</strong><small>${loggedIn ? `${linked.length}개 계정 · 1~10번 선택` : '로그인 후 1~10번 활성화'}</small></span><span class="quick-provider-state"><i class="quick-login-light${loggedIn ? ' is-ready' : ' is-waiting'}"></i>${loggedIn ? '로그인 완료' : 'LOGIN'}</span><span class="quick-provider-check">${active ? '✓' : '+'}</span></button><div class="quick-slot-grid" aria-label="${item.label} 동영상 슬롯 선택">${slots}</div></article>`;
+    return `<article class="quick-provider-card provider-${item.key}"><button class="quick-provider${active ? ' is-active' : ''}${loggedIn ? '' : ' needs-login'}" data-quick-provider="${item.key}" type="button" aria-pressed="${active}"><span class="quick-provider-brand quick-brand-${item.accent}">${item.code}</span><span class="quick-provider-copy"><strong>${item.label}</strong><small>${loggedIn ? `${linked.length}개 계정 · 1~10번 선택` : '로그인 후 1~10번 활성화'}</small></span><span class="quick-provider-state"><i class="quick-login-light${loggedIn ? ' is-ready' : ' is-waiting'}"></i>${loggedIn ? '로그인 완료' : 'LOGIN'}</span><span class="quick-provider-check">${active ? '✓' : '+'}</span></button><div class="quick-slot-grid" aria-label="${item.label} 동영상 슬롯 선택">${slots}</div></article>`;
   }).join('');
   $('#quickPublishSummary').textContent = `활성 SNS ${state.quickProviders.size}개`;
 }
@@ -333,6 +335,40 @@ function uploadFile(file, slotNumber) {
   xhr.addEventListener('error', () => { state.queue.delete(queueId); renderQueue(); showToast('서버에 연결할 수 없습니다.', true); }); xhr.send(file);
 }
 function renderQueue() { const items = [...state.queue.values()]; $('#queueSection').hidden = !items.length; $('#queueCount').textContent = items.length; $('#queueList').innerHTML = items.map((item) => `<div class="queue-row"><span class="slot-number">${String(item.slotNumber).padStart(2, '0')}</span><div><strong>${escapeHtml(item.file.name)}</strong><div class="progress-track"><i style="width:${item.progress}%"></i></div></div><b>${item.status === 'error' ? '실패' : `${item.progress}%`}</b></div>`).join(''); }
+function readVideoMetadata(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    let finished = false;
+    const finish = (metadata) => { if (finished) return; finished = true; URL.revokeObjectURL(url); resolve(metadata); };
+    video.preload = 'metadata';
+    video.onloadedmetadata = () => finish({ width: video.videoWidth, height: video.videoHeight, duration: video.duration });
+    video.onerror = () => finish(null);
+    video.src = url;
+    video.load();
+  });
+}
+
+async function validateProfileVideo(file) {
+  if (file.size > maxFileSize) return `1분 9:16 프로필 기준 예상 용량 ${formatBytes(maxFileSize)} 이하의 파일을 사용해 주세요.`;
+  const basic = validateFile(file);
+  if (basic) return basic;
+  const metadata = await readVideoMetadata(file);
+  if (!metadata || !metadata.width || !metadata.height || !Number.isFinite(metadata.duration)) return '동영상 정보를 읽을 수 없습니다.';
+  const ratio = metadata.width / metadata.height;
+  if (Math.abs(ratio - VIDEO_PROFILE.ratio) > 0.015) return '세로형 9:16 동영상만 업로드할 수 있습니다.';
+  if (metadata.duration > VIDEO_PROFILE.durationSeconds + 0.2) return '동영상 길이는 1분 이하여야 합니다.';
+  if (metadata.width !== VIDEO_PROFILE.width || metadata.height !== VIDEO_PROFILE.height) showToast(`${file.name}: 권장 해상도는 1080×1920입니다. 현재 영상은 9:16 비율로 업로드합니다.`);
+  return null;
+}
+
+const uploadFileBase = uploadFile;
+uploadFile = async function uploadProfileVideo(file, slotNumber) {
+  const validation = await validateProfileVideo(file);
+  if (validation) return showToast(`${file.name}: ${validation}`, true);
+  return uploadFileBase(file, slotNumber);
+};
+
 function startFilePicker(slot) { state.pendingUploadSlot = slot === 'auto' ? (firstFreeSlot() || state.selectedSlot) : Number(slot); $('#fileInput').value = ''; $('#fileInput').click(); }
 function handleSelectedFiles(files) { let slot = state.pendingUploadSlot || firstFreeSlot(); for (const file of files) { if (!slot) { showToast('10개 슬롯이 가득 찼습니다.', true); break; } uploadFile(file, slot); slot = firstFreeSlot(); } state.pendingUploadSlot = null; }
 
@@ -446,6 +482,11 @@ $('#campaignForm').addEventListener('submit', createCampaign); $('#generateAiBut
 $('#openAccountButton').addEventListener('click', openAccountModal); $('#accountForm').addEventListener('submit', saveAccountWithCredentials); $('#accountProvider').addEventListener('change', () => fillRememberedCredentials($('#accountProvider').value)); $('#closeAccountModal').addEventListener('click', closeAccountModal); $('#cancelAccountModal').addEventListener('click', closeAccountModal); $('#accountModal').addEventListener('click', (event) => { if (event.target.id === 'accountModal') closeAccountModal(); });
 $('#prevMonth').addEventListener('click', () => { state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() - 1, 1); renderCalendar(); }); $('#nextMonth').addEventListener('click', () => { state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() + 1, 1); renderCalendar(); }); $('#refreshAnalytics').addEventListener('click', refreshAnalytics); $('#refreshCampaigns').addEventListener('click', loadData); $('#refreshLogs').addEventListener('click', async () => { await loadInsights(); renderAll(); }); $('#checkUpdates').addEventListener('click', checkUpdates);
 const initialSchedule = new Date(Date.now() + 3600000); initialSchedule.setSeconds(0, 0); $('#scheduleDate').value = localInputValue(initialSchedule); const loginSecurityCopy = document.querySelector('.login-security-strip strong'); const loginSecurityNote = document.querySelector('.login-security-strip p'); if (loginSecurityCopy) loginSecurityCopy.textContent = '비밀번호는 암호화 저장소에만 보관됩니다.'; if (loginSecurityNote) loginSecurityNote.textContent = '현재는 sandbox 연결이며 비밀번호는 서버로 보내지지 않습니다. Electron에서는 운영체제 암호화 저장소에만 기억합니다.'; loadData();
+function applyVideoProfileCopy() {
+  const hint = document.querySelector('#dropZone > div:nth-child(2) span');
+  if (hint) hint.textContent = `9:16 세로형 · ${VIDEO_PROFILE.width}×${VIDEO_PROFILE.height} 권장 · 최대 ${VIDEO_PROFILE.durationSeconds}초 · 예상 용량 약 ${formatBytes(estimatedProfileBytes)}`;
+}
+
 function replaceVoiceNoticeWithImage() {
   document.querySelectorAll('.quick-voice-note').forEach((target) => {
     target.replaceChildren();
@@ -471,6 +512,7 @@ function decorateSlotSwitches() {
 
 const accountGridObserver = $('#accountGrid') ? new MutationObserver(decorateSlotSwitches) : null;
 accountGridObserver?.observe($('#accountGrid'), { childList: true, subtree: true });
+applyVideoProfileCopy();
 replaceVoiceNoticeWithImage();
 decorateSlotSwitches();
 
