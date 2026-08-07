@@ -1,45 +1,46 @@
-# 동영상 업로드 프로그램
+# Upload Desk
 
-Windows용 Upload Desk 데스크톱 앱입니다. 하나의 동영상 원본을 YouTube·네이버·TikTok·Facebook·Instagram 계정에 연결하고, 제목·설명·예약일을 입력해 멀티 채널 업로드 작업을 관리합니다.
+Windows용 10-slot 멀티 SNS 영상 게시 보드입니다. 영상 원본을 1~10번 슬롯에 고정하고, SNS 계정별 번호 체크만으로 게시·예약 경로를 만들 수 있습니다.
 
 ## 실행
 
-웹 프리뷰/로컬 서버:
-
 ```bash
+npm install
 npm start
 ```
 
-브라우저에서 `http://localhost:3000`을 엽니다.
-
-Windows 데스크톱 셸:
+브라우저에서 `http://localhost:3000`을 엽니다. Electron 데스크톱 앱은 다음으로 실행합니다.
 
 ```bash
-npm install
 npm run start:desktop
 ```
 
-포터블 EXE:
+## 기능
+
+- MP4, MOV, WebM, MKV 영상 10개 고정 슬롯 저장, 교체, 삭제
+- 각 SNS 계정별 1~10 번호 체크 라우팅과 저장된 체크 상태
+- AI 제목·설명·해시태그 생성: `OPENAI_API_KEY`가 있으면 OpenAI adapter, 없거나 실패하면 로컬 규칙 기반 fallback
+- 업로드 파일명과 슬롯 번호를 사용한 자동 SVG 썸네일 생성
+- 계정×슬롯별 독립 job, 동시 sandbox 전송, 진행률·시도 횟수·상태·로그
+- 중복 업로드 방지, 실패 시 1초→2초→4초 지수 백오프, 수동 재시도
+- 게시 후 mock 조회수·좋아요·댓글 통계, 댓글 답글·숨김·숨김 해제
+- 예약 캘린더, Windows 시작 프로그램/백그라운드 옵션, Electron Builder NSIS/portable 설정
+- `electron-updater` 기반 자동 업데이트 확인 지점
+
+현재 외부 SNS OAuth 자격 증명은 연결하지 않았습니다. `lib/providers.js`의 `ProviderAdapter`가 실제 API 연결 경계이며, 기본 구현은 sandbox 결과를 반환합니다.
+
+## 빌드
 
 ```bash
 npm run dist:desktop
 ```
 
-## 구현 범위
+NSIS 설치 프로그램과 portable EXE를 `dist/`에 만듭니다. 자동 업데이트를 배포하려면 `package.json`의 GitHub publish owner/repo를 실제 릴리스 저장소로 바꾸고 Electron Builder 환경 변수를 설정하세요.
 
-- MP4, MOV, WebM, MKV 업로드
-- 드래그 앤 드롭, 업로드 진행률, 로컬 동영상 목록
-- YouTube, 네이버, TikTok, Facebook, Instagram 계정 연결 관리
-- 하나의 영상에서 여러 SNS 계정으로 이어지는 그래프형 업로드 맵
-- 제목·설명·공개 범위·예약일 입력
-- YouTube 업로드 항목 자동 체크와 수동 확인 항목 분리
-- 여러 계정에 동시에 예약 작업 생성
-- Windows 타이틀바, 최소화·최대화·닫기 컨트롤
-
-현재 SNS에 실제 게시하려면 각 서비스의 OAuth 앱 등록과 API 토큰이 필요합니다. 이번 버전은 계정 메타데이터, 예약 작업, 계정별 전송 대기 큐를 구현하고 실제 API adapter를 연결할 수 있도록 설계했습니다.
-
-테스트:
+## 테스트
 
 ```bash
 npm test
 ```
+
+통합 테스트는 임시 저장소에서 슬롯 업로드, 라우팅, 중복 차단, sandbox 게시, 통계·댓글, 실패 후 재시도를 검증합니다.

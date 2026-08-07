@@ -1,37 +1,49 @@
-# 동영상 업로드 프로그램 데이터 모델
+# 데이터 모델
+
+저장 루트는 `UPLOAD_DESK_DATA_DIR` 아래이며 Electron에서는 `%APPDATA%/upload-desk/storage`입니다.
 
 ## Video
 
-`id`, `originalName`, `storedName`, `mimeType`, `size`, `sizeLabel`, `status`, `createdAt`, `url`을 가진다.
+```json
+{
+  "id": "vid_...", "slotNumber": 1, "originalName": "clip.mp4", "storedName": "vid_....mp4",
+  "mimeType": "video/mp4", "size": 1234, "status": "ready", "createdAt": "ISO-8601",
+  "url": "/uploads/vid_....mp4", "thumbnailUrl": "/thumbnails/vid_....svg",
+  "aiMetadata": { "title": "...", "description": "...", "hashtags": ["#영상"], "source": "local-fallback" }
+}
+```
+
+`slotNumber`는 1~10 사이의 고정 번호다. 교체 시 기존 영상의 미게시 job은 `cancelled`로 바뀐다.
 
 ## Account
 
-`id`, `provider`, `displayName`, `handle`, `status`, `connectedAt`을 가진다.
+`id`, `provider`, `displayName`, `handle`, `status`, `mode`, `slotNumbers`, `connectedAt`을 가진다. `slotNumbers`가 해당 계정으로 보낼 영상 번호의 원본이다.
 
-- `provider`: `youtube`, `naver`, `tiktok`, `facebook`, `instagram`
-- `status`: `connected`, `expired`, `revoked` 확장 가능
-- 실제 OAuth 토큰은 브라우저나 JSON 파일에 저장하지 않고 암호화된 서버 측 저장소에 둔다.
+지원 provider: `youtube`, `naver`, `tiktok`, `facebook`, `instagram`.
 
-## Campaign
+## Campaign / CampaignJob
 
-`id`, `videoId`, `title`, `description`, `scheduledAt`, `youtubeChecklist`, `status`, `createdAt`, `jobs[]`를 가진다.
+Campaign은 공통 게시 정보와 예약 시각을 저장하고, `routes` 및 `jobs`를 가진다. Route는 `{ accountId, slotNumber, videoId }`다.
 
-## CampaignJob
+Job은 `{ id, accountId, provider, handle, slotNumber, videoId, status, progress, attempt, maxAttempts, nextRetryAt, lastError, externalId, analytics, logs }`를 가진다.
 
-`accountId`, `provider`, `handle`, `status`를 가진다.
+Job 상태: `queued` → `uploading` → `published`, 또는 `retrying` → `uploading` → `failed`; 원본 교체·삭제나 예약 취소 시 `cancelled`.
 
-- 초기 상태: `queued`
-- 확장 상태: `uploading`, `published`, `failed`
+## Comment / Settings / Log
 
-## 저장 구조
+- Comment: provider 댓글 원본, `status`(`visible`/`hidden`), `replies[]`, `jobId`, `accountId`
+- Settings: `launchAtStartup`, `startMinimized`, `autoUpdate`, `providerMode`, `maxAttempts`
+- Log: `event`, `message`, `meta`, `createdAt`
+
+## 파일
 
 ```text
-data/videos.json       # Video[]
-data/accounts.json     # Account[]
-data/campaigns.json    # Campaign[]
-uploads/{id}.{ext}     # 실제 영상 원본
+data/videos.json
+data/accounts.json
+data/campaigns.json
+data/comments.json
+data/logs.json
+data/settings.json
+data/thumbnails/{videoId}.svg
+uploads/{videoId}.{ext}
 ```
-
-## 관계
-
-Campaign은 하나의 Video를 여러 Account로 라우팅한다. 실제 게시 단계에서는 CampaignJob 하나가 플랫폼 API 호출 한 건을 담당한다.

@@ -1,73 +1,59 @@
-# 동영상 업로드 프로그램 API 명세
+# Upload Desk API
 
-Base URL: `/api`
+Base URL: `/api`. 모든 응답은 JSON이다.
 
-## GET /videos
+## 영상·AI
 
-저장된 영상 목록을 반환한다.
+- `GET /videos` → `{ videos, maxSlots: 10 }`
+- `POST /videos` → 바이너리 스트림. Headers: `X-File-Name`, `X-File-Type`, `X-File-Size`, `X-Slot-Number`, `X-Replace`.
+  - `201`: `{ video, replacedVideoId }`
+  - 주요 오류: `UNSUPPORTED_VIDEO`, `FILE_TOO_LARGE`, `INVALID_SLOT`, `SLOT_OCCUPIED`, `SLOT_LIMIT_REACHED`, `INCOMPLETE_UPLOAD`
+- `DELETE /videos/:id` → 원본·썸네일 삭제, 미게시 job 취소
+- `POST /ai/generate` body `{ videoId }` → `{ metadata, video }`
 
-## POST /videos
+`metadata.source`는 `openai` 또는 `local-fallback`이다. OpenAI 키가 없거나 요청 실패 시 fallback을 반환한다.
 
-동영상 바이너리를 스트리밍 저장한다.
+## 계정·라우팅
 
-- Headers: `X-File-Name`, `X-File-Type`, `X-File-Size`
-- 성공 `201`: `{ "video": { "id": "...", "originalName": "...", "status": "ready" } }`
-- 실패: `400 INCOMPLETE_UPLOAD`, `413 FILE_TOO_LARGE`, `415 UNSUPPORTED_VIDEO`, `500 UPLOAD_FAILED`
+- `GET /accounts` → 계정과 provider 목록
+- `POST /accounts` body `{ provider, displayName, handle }`
+- `PUT /accounts/:id/routing` body `{ slotNumbers: [1, 2, 10] }`
+- `DELETE /accounts/:id`
 
-## DELETE /videos/:id
+현재 계정은 `mode: sandbox`로 저장되며 비밀번호·OAuth token은 저장하지 않는다.
 
-영상 원본과 메타데이터를 삭제한다.
+## 예약·전송
 
-- 성공 `200`: `{ "deleted": "..." }`
-- 실패 `404 VIDEO_NOT_FOUND`
-
-## GET /accounts
-
-```json
-{ "accounts": [{ "id": "...", "provider": "youtube", "displayName": "브랜드 공식 채널", "handle": "@brand", "status": "connected" }] }
-```
-
-## POST /accounts
-
-```json
-{ "provider": "youtube", "displayName": "브랜드 공식 채널", "handle": "@brand" }
-```
-
-- 성공 `201`: 저장된 account 객체
-- 실패: `400 UNSUPPORTED_PROVIDER`, `400 ACCOUNT_FIELDS_REQUIRED`
-- 현재는 개발 모드 메타데이터 저장이며, 실서비스에서는 OAuth authorization code를 서버에서 교환한다.
-
-## DELETE /accounts/:id
-
-- 성공 `200`: `{ "deleted": "..." }`
-- 실패 `404 ACCOUNT_NOT_FOUND`
-
-## GET /campaigns
-
-예약 작업과 계정별 job 목록을 반환한다.
-
-## POST /campaigns
+- `GET /campaigns`
+- `POST /campaigns` body:
 
 ```json
 {
-  "videoId": "video-id",
   "title": "콘텐츠 제목",
-  "description": "설명과 #태그",
-  "scheduledAt": "2026-08-08T09:00",
+  "description": "설명",
+  "hashtags": ["#영상"],
+  "scheduledAt": "2026-08-08T09:00:00.000Z",
   "privacy": "public",
-  "accountIds": ["youtube-account-id", "instagram-account-id"],
-  "youtubeChecklist": { "title": true, "thumbnail": false }
+  "routes": [{ "accountId": "acct_...", "slotNumber": 1 }]
 }
 ```
 
-- 성공 `201`: `scheduled` campaign 및 account별 `queued` job
-- 실패: `400 CAMPAIGN_FIELDS_REQUIRED`, `400 TARGET_ACCOUNTS_REQUIRED`
+- `POST /campaigns/:id/run` 예약 작업을 즉시 sandbox 실행
+- `POST /jobs/:id/retry` 실패 job 수동 재시도
+- `DELETE /campaigns/:id` 미게시 job 취소
 
-## DELETE /campaigns/:id
+동일한 `videoId:accountId`가 게시 완료·예약·진행 중이면 `409 DUPLICATE_ROUTES`로 차단한다. 실패 후 `nextRetryAt`은 1초, 2초, 4초…로 증가하며 최대 3회 시도한다.
 
-- 성공 `200`: `{ "deleted": "..." }`
-- 실패 `404 CAMPAIGN_NOT_FOUND`
+## 통계·댓글·운영
 
-## GET /uploads/:storedName
+- `GET /analytics`, `POST /analytics/refresh`
+- `GET /comments`
+- `POST /comments/:id/reply` body `{ text }`
+- `PATCH /comments/:id` body `{ action: "hide" | "unhide" }`
+- `GET /logs?limit=80`
+- `GET /settings`, `PUT /settings` body `{ launchAtStartup, startMinimized, autoUpdate }`
+- `GET /health`
 
-저장된 영상 바이너리를 반환한다. 향후 데스크톱 상세 재생·다운로드에 사용한다.
+## 실제 API 연결 경계
+
+`lib/providers.js`의 `ProviderAdapter`를 구현하고 `getProviderAdapter()` registry에 provider별 OAuth adapter를 등록한다. `publish`, `getAnalytics`, `listComments`, `replyComment`, `hideComment`가 실제 API 호출 지점이다.

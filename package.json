@@ -1,24 +1,31 @@
 {
   "name": "video-upload-program",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "description": "동영상 업로드 프로그램 Windows 데스크톱 앱",
   "main": "desktop/main.cjs",
   "scripts": {
     "start": "node server.js",
     "start:desktop": "electron .",
-    "dist:desktop": "electron-builder --win portable",
+    "dist:desktop": "electron-builder --win nsis portable",
+    "dist:installer": "electron-builder --win nsis",
     "test": "node --test tests/server.test.js"
   },
   "devDependencies": {
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3"
   },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
   "build": {
-    "appId": "com.uploaddesk.desktop",
+    "appId": "com.uploaddesk.desktop.v2",
     "productName": "동영상 업로드 프로그램",
     "asar": true,
-    "files": ["desktop/**/*", "public/**/*", "server.js", "package.json"],
-    "win": { "target": "portable", "signAndEditExecutable": false }
+    "files": ["desktop/**/*", "public/**/*", "lib/**/*", "server.js", "package.json"],
+    "directories": { "output": "dist" },
+    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }], "signAndEditExecutable": false },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "runAfterFinish": true },
+    "publish": { "provider": "github", "owner": "your-org", "repo": "video-upload-program", "releaseType": "release" }
   }
 }
