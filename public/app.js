@@ -398,5 +398,33 @@ $('#campaignForm').addEventListener('submit', createCampaign); $('#generateAiBut
 $('#openAccountButton').addEventListener('click', openAccountModal); $('#accountForm').addEventListener('submit', saveAccountWithCredentials); $('#accountProvider').addEventListener('change', () => fillRememberedCredentials($('#accountProvider').value)); $('#closeAccountModal').addEventListener('click', closeAccountModal); $('#cancelAccountModal').addEventListener('click', closeAccountModal); $('#accountModal').addEventListener('click', (event) => { if (event.target.id === 'accountModal') closeAccountModal(); });
 $('#prevMonth').addEventListener('click', () => { state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() - 1, 1); renderCalendar(); }); $('#nextMonth').addEventListener('click', () => { state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() + 1, 1); renderCalendar(); }); $('#refreshAnalytics').addEventListener('click', refreshAnalytics); $('#refreshCampaigns').addEventListener('click', loadData); $('#refreshLogs').addEventListener('click', async () => { await loadInsights(); renderAll(); }); $('#checkUpdates').addEventListener('click', checkUpdates);
 const initialSchedule = new Date(Date.now() + 3600000); initialSchedule.setSeconds(0, 0); $('#scheduleDate').value = localInputValue(initialSchedule); const loginSecurityCopy = document.querySelector('.login-security-strip strong'); const loginSecurityNote = document.querySelector('.login-security-strip p'); if (loginSecurityCopy) loginSecurityCopy.textContent = '비밀번호는 암호화 저장소에만 보관됩니다.'; if (loginSecurityNote) loginSecurityNote.textContent = '현재는 sandbox 연결이며 비밀번호는 서버로 보내지지 않습니다. Electron에서는 운영체제 암호화 저장소에만 기억합니다.'; loadData();
+function replaceVoiceNoticeWithImage() {
+  document.querySelectorAll('.quick-voice-note').forEach((target) => {
+    target.replaceChildren();
+    const image = document.createElement('img');
+    image.src = '/assets/upload-complete.svg';
+    image.alt = '업로드 완료 음성 안내';
+    image.title = '업로드 완료 음성 안내';
+    target.append(image);
+  });
+}
+
+function decorateSlotSwitches() {
+  document.querySelectorAll('[data-account-slot]').forEach((input) => {
+    const label = input.closest('.slot-switch');
+    if (!label) return;
+    const slot = input.dataset.slotNumber;
+    const ready = !input.disabled;
+    label.classList.toggle('is-ready', ready);
+    label.classList.toggle('is-selected', input.checked);
+    input.setAttribute('aria-label', `${slot}번 동영상 ${input.checked ? '선택됨' : '선택 안 됨'}${ready ? '' : ' · 업로드 완료 후 선택 가능'}`);
+  });
+}
+
+const accountGridObserver = $('#accountGrid') ? new MutationObserver(decorateSlotSwitches) : null;
+accountGridObserver?.observe($('#accountGrid'), { childList: true, subtree: true });
+replaceVoiceNoticeWithImage();
+decorateSlotSwitches();
+
 async function pollCampaigns() { if (!state.campaignsLoaded) return; try { const payload = await api('/api/campaigns'); state.campaigns = payload.campaigns || []; state.campaigns.forEach(announcePublishedJobs); renderStats(); renderCampaigns(); renderCalendar(); } catch {} }
 window.setInterval(pollCampaigns, 15000);

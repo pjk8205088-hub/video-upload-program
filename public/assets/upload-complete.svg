@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="42" height="26" viewBox="0 0 42 26" role="img" aria-labelledby="title desc">
+  <title id="title">업로드 완료 음성 안내</title>
+  <desc id="desc">스피커와 완료 표시 아이콘</desc>
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#3467ff"/>
+      <stop offset="1" stop-color="#22c55e"/>
+    </linearGradient>
+  </defs>
+  <rect width="42" height="26" rx="6" fill="#edf3ff" stroke="#c7d5ff"/>
+  <path d="M8 11h4l5-4v12l-5-4H8z" fill="url(#g)"/>
+  <path d="M20 10c2 1 2 5 0 6M23 8c4 3 4 7 0 10" fill="none" stroke="#3467ff" stroke-linecap="round" stroke-width="1.5"/>
+  <path d="m31 14 2 2 4-5" fill="none" stroke="#16a34a" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+</svg>
