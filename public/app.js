@@ -225,7 +225,15 @@ async function loadData() {
   } catch (error) { showToast(error.message || '프로그램 데이터를 불러오지 못했습니다.', true); }
 }
 
-function fillMetadata(video) { const meta = video?.aiMetadata; if (!meta) return; $('#campaignTitle').value = meta.title || ''; $('#campaignDescription').value = meta.description || ''; $('#campaignHashtags').value = (meta.hashtags || []).join(' '); renderYoutubeChecklist(); }
+function fillMetadata(video) {
+  if (!video) return;
+  const meta = video.aiMetadata || {};
+  const fallbackTitle = String(video.originalName || `영상 ${video.slotNumber || ''}`).replace(/\.[^.]+$/, '').trim();
+  if (!$('#campaignTitle').value.trim()) $('#campaignTitle').value = meta.title || fallbackTitle || '새 동영상';
+  if (!$('#campaignDescription').value.trim()) $('#campaignDescription').value = meta.description || `${$('#campaignTitle').value.trim()} 업로드 설명`;
+  if (!$('#campaignHashtags').value.trim()) $('#campaignHashtags').value = (meta.hashtags || ['#동영상', '#콘텐츠']).join(' ');
+  renderYoutubeChecklist();
+}
 async function generateAi() { const video = videoForSlot(state.selectedSlot); if (!video) return showToast('먼저 영상을 선택해 주세요.', true); try { const result = await api('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: video.id }) }); fillMetadata({ aiMetadata: result.metadata }); showToast(result.metadata.source === 'openai' ? 'OpenAI 초안을 적용했습니다.' : '로컬 fallback 초안을 적용했습니다.'); } catch (error) { showToast(error.message, true); } }
 
 function validateFile(file) { const extension = file.name.split('.').pop().toLowerCase(); if (!allowedExtensions.has(extension)) return 'MP4, MOV, WebM, MKV 파일만 올릴 수 있습니다.'; if (file.size > maxFileSize) return '파일 크기는 2 GB 이하여야 합니다.'; if (!file.size) return '빈 파일은 업로드할 수 없습니다.'; return null; }
@@ -287,20 +295,23 @@ async function saveAccountWithCredentials(event) {
       try { await window.desktopWindow.saveCredentials({ provider, displayName, handle, password, remember }); } catch {}
     }
     state.accounts.unshift(result.account);
-    const quickProvider = state.pendingQuickProvider;
     state.pendingQuickProvider = '';
-    if (quickProvider === result.account.provider && videoForSlot(state.selectedSlot)) {
-      state.quickProviders.add(quickProvider);
+    const selectedVideo = videoForSlot(state.selectedSlot);
+    let uploadReady = false;
+    if (selectedVideo) {
+      fillMetadata(selectedVideo);
+      state.quickProviders.add(result.account.provider);
       result.account.slotNumbers = [state.selectedSlot];
       try {
         const routed = await api(`/api/accounts/${encodeURIComponent(result.account.id)}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: result.account.slotNumbers }) });
         Object.assign(result.account, routed.account);
+        uploadReady = true;
       } catch {}
     }
     closeAccountModal();
     renderAll();
-    document.querySelector(`#login-${result.account.provider}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    showToast(`${providerFor(result.account.provider).label} 계정을 연결했습니다.${remember ? ' 로그인 정보가 기억되었습니다.' : ''}`);
+    document.querySelector('#slots')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showToast(`${providerFor(result.account.provider).label} 로그인 완료 · ${uploadReady ? '업로드 준비 완료' : '영상을 추가하면 업로드 준비'}${remember ? ' · 로그인 정보 기억됨' : ''}`);
   } catch (error) { showToast(error.message, true); }
 }
 
@@ -346,6 +357,6 @@ $('#fileInput').addEventListener('change', () => handleSelectedFiles([...$('#fil
 $('#campaignForm').addEventListener('submit', createCampaign); $('#generateAiButton').addEventListener('click', generateAi); $('#campaignTitle').addEventListener('input', renderYoutubeChecklist); $('#campaignDescription').addEventListener('input', renderYoutubeChecklist); $('#campaignHashtags').addEventListener('input', renderYoutubeChecklist);
 $('#openAccountButton').addEventListener('click', openAccountModal); $('#accountForm').addEventListener('submit', saveAccountWithCredentials); $('#accountProvider').addEventListener('change', () => fillRememberedCredentials($('#accountProvider').value)); $('#closeAccountModal').addEventListener('click', closeAccountModal); $('#cancelAccountModal').addEventListener('click', closeAccountModal); $('#accountModal').addEventListener('click', (event) => { if (event.target.id === 'accountModal') closeAccountModal(); });
 $('#prevMonth').addEventListener('click', () => { state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() - 1, 1); renderCalendar(); }); $('#nextMonth').addEventListener('click', () => { state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() + 1, 1); renderCalendar(); }); $('#refreshAnalytics').addEventListener('click', refreshAnalytics); $('#refreshCampaigns').addEventListener('click', loadData); $('#refreshLogs').addEventListener('click', async () => { await loadInsights(); renderAll(); }); $('#checkUpdates').addEventListener('click', checkUpdates);
-const initialSchedule = new Date(Date.now() + 3600000); initialSchedule.setSeconds(0, 0); $('#scheduleDate').value = localInputValue(initialSchedule); loadData();
+const initialSchedule = new Date(Date.now() + 3600000); initialSchedule.setSeconds(0, 0); $('#scheduleDate').value = localInputValue(initialSchedule); const loginSecurityCopy = document.querySelector('.login-security-strip strong'); const loginSecurityNote = document.querySelector('.login-security-strip p'); if (loginSecurityCopy) loginSecurityCopy.textContent = '비밀번호는 암호화 저장소에만 보관됩니다.'; if (loginSecurityNote) loginSecurityNote.textContent = '현재는 sandbox 연결이며 비밀번호는 서버로 보내지지 않습니다. Electron에서는 운영체제 암호화 저장소에만 기억합니다.'; loadData();
 async function pollCampaigns() { if (!state.campaignsLoaded) return; try { const payload = await api('/api/campaigns'); state.campaigns = payload.campaigns || []; state.campaigns.forEach(announcePublishedJobs); renderStats(); renderCampaigns(); renderCalendar(); } catch {} }
 window.setInterval(pollCampaigns, 15000);
