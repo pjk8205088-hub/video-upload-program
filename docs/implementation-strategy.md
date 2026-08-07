@@ -1,48 +1,41 @@
 # 동영상 업로드 프로그램 구현 전략
 
-## 전체 개발 순서
+## 현재 구조
 
-1. 요구사항·화면·데이터 계약 확정
-2. 정적 업로드 센터 UI 구현
-3. JSON 기반 저장소와 바이너리 저장 API 구현
-4. 프론트엔드 업로드 진행률·목록 연동
-5. 검색·정렬·삭제 구현
-6. 반응형·접근성 점검
-7. 단위·통합 테스트와 실행 검증
+- Node 내장 HTTP 서버가 정적 화면과 `/api`를 제공한다.
+- 동영상은 스트림으로 `uploads/`에 저장한다.
+- 영상·계정·예약 작업은 JSON 컬렉션으로 유지한다.
+- Electron이 임시 로컬 포트의 HTTP 서버를 실행하고 BrowserWindow에 로드한다.
+- preload는 최소화·최대화·닫기 IPC만 context bridge로 노출한다.
 
 ## 프론트엔드
 
-- 바닐라 HTML/CSS/JS로 시작해 빌드 도구 의존성을 줄인다.
-- `XMLHttpRequest.upload.progress`로 실시간 진행률을 표시한다.
-- DOM 출력 전 사용자 입력 파일명은 HTML escape 처리한다.
-- 드래그 앤 드롭, 키보드 Enter/Space, 파일 선택 버튼을 모두 지원한다.
-- CSS 변수로 색상과 간격을 관리하고 860px·500px 브레이크포인트를 둔다.
+- 데스크톱 작업창 중심의 고정 레이아웃을 사용한다.
+- 레드 포인트, 밀도 높은 카드·목록, 상태 태그를 활용한 관리자형 UI다.
+- 영상 → SNS 계정은 SVG 선으로 시각화한다.
+- YouTube 체크 항목은 입력 상태에 따라 자동 체크하며 법적·정책적 판단이 필요한 항목은 수동으로 남긴다.
 
-## 백엔드
+## SNS adapter 확장
 
-- Node 내장 `http`로 API와 정적 파일을 제공한다.
-- 업로드는 요청 스트림을 `uploads/`로 직접 pipe해 메모리 전체 적재를 피한다.
-- 확장자·MIME·파일 크기를 서버에서도 다시 검증한다.
-- 서버 생성 ID를 저장 파일명으로 사용하고 원본 파일명은 메타데이터에만 보관한다.
+현재 `POST /api/campaigns`는 공통 콘텐츠와 계정별 `queued` 작업까지만 만든다. 다음 단계에서 provider별 adapter를 붙인다.
 
-## DB/저장소
+- YouTube: Data API 업로드, privacy, category, playlist
+- Facebook·Instagram: Graph API 페이지·릴스 게시
+- TikTok: Content Posting API
+- 네이버: 실제 사용 서비스별 공식 API 범위 확인
 
-- MVP: JSON 배열 + 로컬 디렉터리.
-- 후속: 트랜잭션이 필요한 시점에 SQLite/PostgreSQL로 이동.
-- 후속: S3 호환 스토리지, checksum, multipart upload 도입.
+각 adapter는 `validate()`, `upload()`, `publish()`, `refreshToken()` 계약으로 통일한다.
 
-## 인증·권한
+## 보안·운영
 
-현재는 로컬 단일 관리자 가정이다. 외부 노출 전환 시 세션 또는 OAuth, 업로드·삭제 권한, CSRF 보호, rate limit을 먼저 추가한다.
+- 비밀번호를 받지 않는다.
+- OAuth access token은 암호화된 서버 저장소에 보관한다.
+- 외부 공개 전 HTTPS, CSRF, rate limit, 재시도, 토큰 만료 처리, 업로드 결과 callback을 추가한다.
+- 배포 시 `npm run dist:desktop`으로 Windows portable EXE를 생성한다.
 
-## 테스트 전략
+## 테스트
 
-- `formatBytes`와 업로드 제한을 Node 내장 테스트로 검증한다.
-- 수동 검증: 빈 상태, 정상 업로드, 다중 업로드, 형식 오류, 용량 오류, 검색, 정렬, 삭제, 모바일 레이아웃.
-- 실서비스 전환 시 API 통합 테스트에서 임시 저장 디렉터리를 사용해 파일 생성·삭제를 검증한다.
-
-## 배포 고려사항
-
-- `uploads/`와 `data/`는 정적 배포 산출물과 분리한다.
-- 2 GB 파일을 처리할 수 있도록 reverse proxy body size와 timeout을 조정한다.
-- 운영 환경에서는 HTTPS, 인증, 바이러스 검사, 백업 정책이 필수다.
+- Node 구문 검사와 단위 테스트
+- API 수동 검증: 계정 생성, 캠페인 생성, 잘못된 입력
+- 브라우저 검증: 파일 업로드, 계정 연결, 연결 맵, YouTube 자동 체크, 다중 계정 예약
+- 실제 SNS API를 붙일 때는 플랫폼별 sandbox 계정과 mock adapter를 사용한다.

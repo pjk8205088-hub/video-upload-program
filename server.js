@@ -10,9 +10,12 @@ const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = path.join(ROOT, 'data');
 const UPLOAD_DIR = path.join(ROOT, 'uploads');
 const VIDEO_DB = path.join(DATA_DIR, 'videos.json');
+const ACCOUNT_DB = path.join(DATA_DIR, 'accounts.json');
+const CAMPAIGN_DB = path.join(DATA_DIR, 'campaigns.json');
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska']);
 const ALLOWED_EXTENSIONS = new Set(['.mp4', '.mov', '.webm', '.mkv']);
+const ALLOWED_PROVIDERS = new Set(['youtube', 'naver', 'tiktok', 'facebook', 'instagram']);
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -26,10 +29,8 @@ const MIME_TYPES = {
 async function ensureStorage() {
   await fsp.mkdir(DATA_DIR, { recursive: true });
   await fsp.mkdir(UPLOAD_DIR, { recursive: true });
-  try {
-    await fsp.access(VIDEO_DB);
-  } catch {
-    await fsp.writeFile(VIDEO_DB, '[]', 'utf8');
+  for (const file of [VIDEO_DB, ACCOUNT_DB, CAMPAIGN_DB]) {
+    try { await fsp.access(file); } catch { await fsp.writeFile(file, '[]', 'utf8'); }
   }
 }
 
@@ -45,6 +46,31 @@ async function readVideos() {
 
 async function writeVideos(videos) {
   await fsp.writeFile(VIDEO_DB, JSON.stringify(videos, null, 2), 'utf8');
+}
+
+async function readJsonCollection(file) {
+  await ensureStorage();
+  try {
+    const data = JSON.parse(await fsp.readFile(file, 'utf8'));
+    return Array.isArray(data) ? data : [];
+  } catch { return []; }
+}
+
+async function writeJsonCollection(file, collection) {
+  await fsp.writeFile(file, JSON.stringify(collection, null, 2), 'utf8');
+}
+
+async function readRequestBody(req, maxBytes = 1024 * 1024) {
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > maxBytes) throw Object.assign(new Error('Request too large'), { statusCode: 413 });
+    chunks.push(chunk);
+  }
+  if (!total) return {};
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  catch { throw Object.assign(new Error('Invalid JSON'), { statusCode: 400 }); }
 }
 
 function sendJson(res, status, payload) {
@@ -81,6 +107,65 @@ function formatBytes(bytes) {
 
 function createId() {
   return `${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
+}
+
+function cleanText(value, fallback = '') {
+  return String(value ?? fallback).trim().slice(0, 500);
+}
+
+async function createAccount(req, res) {
+  const body = await readRequestBody(req);
+  const provider = cleanText(body.provider).toLowerCase();
+  const displayName = cleanText(body.displayName);
+  const handle = cleanText(body.handle);
+  if (!ALLOWED_PROVIDERS.has(provider)) return sendError(res, 400, '지원하지 않는 SNS입니다.', 'UNSUPPORTED_PROVIDER');
+  if (!displayName || !handle) return sendError(res, 400, '계정 이름과 아이디를 입력해 주세요.', 'ACCOUNT_FIELDS_REQUIRED');
+  const account = { id: createId(), provider, displayName, handle, status: 'connected', connectedAt: new Date().toISOString() };
+  const accounts = await readJsonCollection(ACCOUNT_DB);
+  accounts.unshift(account);
+  await writeJsonCollection(ACCOUNT_DB, accounts);
+  return sendJson(res, 201, { account });
+}
+
+async function deleteAccount(res, id) {
+  const accounts = await readJsonCollection(ACCOUNT_DB);
+  if (!accounts.some((account) => account.id === id)) return sendError(res, 404, '연결된 계정을 찾을 수 없습니다.', 'ACCOUNT_NOT_FOUND');
+  await writeJsonCollection(ACCOUNT_DB, accounts.filter((account) => account.id !== id));
+  return sendJson(res, 200, { deleted: id });
+}
+
+async function createCampaign(req, res) {
+  const body = await readRequestBody(req);
+  const title = cleanText(body.title);
+  const description = cleanText(body.description);
+  const scheduledAt = cleanText(body.scheduledAt);
+  const accountIds = Array.isArray(body.accountIds) ? body.accountIds.map((id) => cleanText(id)).filter(Boolean) : [];
+  if (!title || !scheduledAt || !accountIds.length) return sendError(res, 400, '제목, 예약일, 업로드 계정을 모두 입력해 주세요.', 'CAMPAIGN_FIELDS_REQUIRED');
+  const accounts = await readJsonCollection(ACCOUNT_DB);
+  const targets = accounts.filter((account) => accountIds.includes(account.id));
+  if (!targets.length) return sendError(res, 400, '업로드 대상 계정을 찾을 수 없습니다.', 'TARGET_ACCOUNTS_REQUIRED');
+  const campaign = {
+    id: createId(),
+    title,
+    description,
+    scheduledAt,
+    videoId: cleanText(body.videoId),
+    youtubeChecklist: body.youtubeChecklist && typeof body.youtubeChecklist === 'object' ? body.youtubeChecklist : {},
+    status: 'scheduled',
+    createdAt: new Date().toISOString(),
+    jobs: targets.map((account) => ({ accountId: account.id, provider: account.provider, handle: account.handle, status: 'queued' }))
+  };
+  const campaigns = await readJsonCollection(CAMPAIGN_DB);
+  campaigns.unshift(campaign);
+  await writeJsonCollection(CAMPAIGN_DB, campaigns);
+  return sendJson(res, 201, { campaign });
+}
+
+async function deleteCampaign(res, id) {
+  const campaigns = await readJsonCollection(CAMPAIGN_DB);
+  if (!campaigns.some((campaign) => campaign.id === id)) return sendError(res, 404, '예약 작업을 찾을 수 없습니다.', 'CAMPAIGN_NOT_FOUND');
+  await writeJsonCollection(CAMPAIGN_DB, campaigns.filter((campaign) => campaign.id !== id));
+  return sendJson(res, 200, { deleted: id });
 }
 
 async function handleUpload(req, res) {
@@ -179,6 +264,26 @@ function createServer() {
       if (req.method === 'POST' && pathname === '/api/videos') {
         return handleUpload(req, res);
       }
+      if (req.method === 'GET' && pathname === '/api/accounts') {
+        return sendJson(res, 200, { accounts: await readJsonCollection(ACCOUNT_DB) });
+      }
+      if (req.method === 'POST' && pathname === '/api/accounts') {
+        return await createAccount(req, res);
+      }
+      const deleteAccountMatch = pathname.match(/^\/api\/accounts\/([^/]+)$/);
+      if (req.method === 'DELETE' && deleteAccountMatch) {
+        return deleteAccount(res, deleteAccountMatch[1]);
+      }
+      if (req.method === 'GET' && pathname === '/api/campaigns') {
+        return sendJson(res, 200, { campaigns: await readJsonCollection(CAMPAIGN_DB) });
+      }
+      if (req.method === 'POST' && pathname === '/api/campaigns') {
+        return await createCampaign(req, res);
+      }
+      const deleteCampaignMatch = pathname.match(/^\/api\/campaigns\/([^/]+)$/);
+      if (req.method === 'DELETE' && deleteCampaignMatch) {
+        return deleteCampaign(res, deleteCampaignMatch[1]);
+      }
       const deleteMatch = pathname.match(/^\/api\/videos\/([^/]+)$/);
       if (req.method === 'DELETE' && deleteMatch) {
         return handleDelete(res, deleteMatch[1]);
@@ -203,13 +308,13 @@ function createServer() {
       return sendError(res, 405, '지원하지 않는 요청입니다.', 'METHOD_NOT_ALLOWED');
     } catch (error) {
       console.error(error);
-      if (!res.headersSent) sendError(res, 500, '서버 오류가 발생했습니다.', 'INTERNAL_ERROR');
+      if (!res.headersSent) sendError(res, error.statusCode || 500, error.statusCode === 413 ? '요청 데이터가 너무 큽니다.' : '서버 오류가 발생했습니다.', error.statusCode === 413 ? 'REQUEST_TOO_LARGE' : 'INTERNAL_ERROR');
     }
   });
 }
 
 if (require.main === module) {
-  const port = Number(process.env.PORT || 3000);
+  const port = Number(process.argv[2] || process.env.PORT || 3000);
   ensureStorage().then(() => createServer().listen(port, () => {
     console.log(`동영상 업로드 프로그램: http://localhost:${port}`);
   }));
