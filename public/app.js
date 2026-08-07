@@ -121,10 +121,10 @@ function renderSidebarStatus() {
   const instagramReady = state.accounts.some((account) => account.provider === 'instagram' && account.status === 'connected');
   const uploadReady = state.videos.length > 0 && selectedRoutes().length > 0;
   const statuses = [
-    { ready: instagramReady, light: '#instagramLoginLight', status: '#instagramLoginStatus', code: '#instagramLoginCode', readyText: '로그인됨', waitText: '연결 필요' },
-    { ready: uploadReady, light: '#uploadReadyLight', status: '#uploadReadyStatus', code: '#uploadReadyCode', readyText: '준비됨', waitText: '영상·라우팅 확인 필요' }
+    { ready: instagramReady, light: '#instagramLoginLight', status: '#instagramLoginStatus', code: '#instagramLoginCode', readyText: '로그인 완료', waitText: '연결 필요' },
+    { ready: uploadReady, light: '#uploadReadyLight', status: '#uploadReadyStatus', code: '#uploadReadyCode', readyText: '업로드 준비완료', waitText: '영상·라우팅 확인 필요' }
   ];
-  statuses.forEach(({ ready, light, status, code, readyText, waitText }) => { $(light)?.classList.toggle('is-ready', ready); $(light)?.classList.toggle('is-waiting', !ready); $(status).textContent = ready ? readyText : waitText; $(code).textContent = ready ? 'GREEN' : 'RED'; $(code).classList.toggle('is-ready', ready); $(code).classList.toggle('is-waiting', !ready); });
+  statuses.forEach(({ ready, light, status, code, readyText, waitText }) => { $(light)?.classList.toggle('is-ready', ready); $(light)?.classList.toggle('is-waiting', !ready); $(status).textContent = ready ? readyText : waitText; $(code).textContent = ready ? 'BLUE' : 'RED'; $(code).classList.toggle('is-ready', ready); $(code).classList.toggle('is-waiting', !ready); });
 }
 
 function renderStats() {
