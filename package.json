@@ -19,6 +19,6 @@
     "productName": "동영상 업로드 프로그램",
     "asar": true,
     "files": ["desktop/**/*", "public/**/*", "server.js", "package.json"],
-    "win": { "target": "portable" }
+    "win": { "target": "portable", "signAndEditExecutable": false }
   }
 }

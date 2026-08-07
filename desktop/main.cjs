@@ -15,6 +15,7 @@ function registerWindowControls() {
 }
 
 async function startLocalServer() {
+  process.env.UPLOAD_DESK_DATA_DIR = path.join(app.getPath('userData'), 'storage');
   await ensureStorage();
   localServer = createServer();
   await new Promise((resolve) => localServer.listen(0, '127.0.0.1', resolve));

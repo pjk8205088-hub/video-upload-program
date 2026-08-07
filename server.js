@@ -7,8 +7,9 @@ const { URL } = require('node:url');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
-const DATA_DIR = path.join(ROOT, 'data');
-const UPLOAD_DIR = path.join(ROOT, 'uploads');
+const STORAGE_ROOT = process.env.UPLOAD_DESK_DATA_DIR || ROOT;
+const DATA_DIR = path.join(STORAGE_ROOT, 'data');
+const UPLOAD_DIR = path.join(STORAGE_ROOT, 'uploads');
 const VIDEO_DB = path.join(DATA_DIR, 'videos.json');
 const ACCOUNT_DB = path.join(DATA_DIR, 'accounts.json');
 const CAMPAIGN_DB = path.join(DATA_DIR, 'campaigns.json');
