@@ -139,6 +139,22 @@ function renderSidebarStatus() {
   target.innerHTML = rows.join('');
 }
 
+function renderSidebarStatus() {
+  const target = document.querySelector('.status-inline-row');
+  if (!target) return;
+  const rows = loginProviders.map((item) => {
+    const linkedAccounts = state.accounts.filter((account) => account.provider === item.key && account.status === 'connected');
+    const loggedIn = linkedAccounts.length > 0;
+    const uploadReady = loggedIn && Boolean(videoForSlot(state.selectedSlot)) && linkedAccounts.some((account) => (account.slotNumbers || []).includes(state.selectedSlot));
+    const light = (ready) => `<i class="status-check-light${ready ? ' is-ready' : ' is-waiting'}"></i>`;
+    const code = (ready) => `<b class="${ready ? 'is-ready' : 'is-waiting'}">${ready ? 'GREEN' : 'RED'}</b>`;
+    return `<a class="status-inline-item status-all-item status-sns-item" href="#login-${item.key}" aria-label="${item.label} 로그인 및 업로드 상태"><div class="status-provider-head"><span class="status-light${loggedIn ? ' is-ready' : ' is-waiting'}"></span><span><strong>${item.label}</strong><small>${loggedIn ? '로그인 완료' : '로그인 필요'}</small></span>${code(loggedIn)}</div><div class="status-provider-checks"><span class="status-check${loggedIn ? ' is-ready' : ' is-waiting'}">${light(loggedIn)}로그인 ${code(loggedIn)}</span><span class="status-check${uploadReady ? ' is-ready' : ' is-waiting'}">${light(uploadReady)}업로드 준비 ${code(uploadReady)}</span></div></a>`;
+  });
+  const uploadReady = state.videos.length > 0 && selectedRoutes().length > 0;
+  rows.push(`<a class="status-inline-item status-all-item status-overall-item" href="#slots" aria-label="전체 업로드 준비 상태"><div class="status-provider-head"><span class="status-light${uploadReady ? ' is-ready' : ' is-waiting'}"></span><span><strong>전체 업로드 준비</strong><small>${uploadReady ? '모든 선택 경로 준비 완료' : '영상·SNS 라우팅 확인 필요'}</small></span>${code(uploadReady)}</div></a>`);
+  target.innerHTML = rows.join('');
+}
+
 function renderStats() {
   const filled = state.videos.length;
   const views = state.analytics.totals?.views || 0;
