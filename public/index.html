@@ -25,7 +25,7 @@
           <a class="nav-link" href="#schedule"><span>03</span>예약 작업<b id="navCampaignCount">0</b></a>
           <a class="nav-link" href="#insights"><span>04</span>통계 · 댓글</a>
           <a class="nav-link" href="#settings"><span>06</span>환경설정</a>
-          <div class="nav-submenu" aria-label="계정 로그인">
+          <div class="nav-submenu" aria-label="4개 SNS 계정 로그인"><span class="nav-submenu-title">SNS 로그인 4개</span>
             <a class="nav-sub-link" href="#login-instagram"><i>IG</i><span>Instagram 로그인</span></a>
             <a class="nav-sub-link" href="#login-tiktok"><i>TT</i><span>TikTok 로그인</span></a>
             <a class="nav-sub-link" href="#login-naver"><i>NV</i><span>네이버 클립 로그인</span></a>
@@ -101,7 +101,7 @@
 
         <section class="panel" id="settings"><div class="panel-head compact"><div><span class="eyebrow">08 / DESKTOP SETTINGS</span><h2>Windows 백그라운드 · 업데이트</h2><p>Electron 앱에서만 Windows 시작 설정이 실제 로그인 항목에 적용됩니다. 브라우저에서는 설정만 저장합니다.</p></div></div><div class="settings-grid"><label class="setting-row"><span><strong>Windows 시작 시 실행</strong><small>로그인 후 Upload Desk를 자동으로 시작</small></span><input id="launchAtStartup" type="checkbox"></label><label class="setting-row"><span><strong>시작 시 백그라운드</strong><small>창을 띄우지 않고 로컬 스케줄러부터 시작</small></span><input id="startMinimized" type="checkbox"></label><label class="setting-row"><span><strong>자동 업데이트 확인</strong><small>Electron Builder publish 채널에서 새 버전을 확인</small></span><input id="autoUpdate" type="checkbox"></label></div><div class="settings-actions"><span id="updateStatus">설정은 로컬 workspace에 저장됩니다.</span><button class="button button-dark" id="checkUpdates" type="button">업데이트 확인</button></div></section>
 
-        <section class="panel login-panel" id="account-login"><div class="panel-head"><div><span class="eyebrow">09 / ACCOUNT LOGIN PAGES</span><h2>SNS 계정 로그인</h2><p>서비스별 OAuth 로그인 페이지입니다. 로그인한 계정은 아래의 번호 라우팅에서 게시 슬롯을 선택할 수 있습니다.</p></div><span class="mode-badge"><i></i> SANDBOX AUTH READY</span></div><div id="loginPageGrid" class="login-page-grid"></div><div class="login-security-strip"><span class="security-mark">↗</span><div><strong>비밀번호는 Upload Desk에 저장되지 않습니다.</strong><p>실서비스 전환 시 각 서비스의 OAuth 권한 화면과 callback만 연결합니다. 현재 버튼은 sandbox 계정 식별자 저장 화면을 엽니다.</p></div><span class="security-code">OAUTH / TOKEN SEAM</span></div></section>
+        <section class="panel login-panel" id="account-login"><div class="panel-head"><div><span class="eyebrow">09 / ACCOUNT LOGIN PAGES · 4 SERVICES</span><h2>4개 SNS 로그인 페이지</h2><p>Instagram, TikTok, 네이버 클립, Facebook 로그인 페이지를 각각 제공합니다. 로그인 성공 후 해당 서비스의 계정과 업로드 페이지를 연결합니다.</p></div><span class="mode-badge"><i></i> 4 LOGIN PAGES READY</span></div><div id="loginPageGrid" class="login-page-grid" aria-label="4개 SNS 로그인 페이지"></div><div class="login-security-strip"><span class="security-mark">↗</span><div><strong>4개 서비스 로그인 상태를 개별 관리합니다.</strong><p>비밀번호는 Upload Desk에 저장되지 않으며, 공식 로그인 세션이 확인된 서비스만 CONNECTED로 표시됩니다.</p></div><span class="security-code">IG · TT · NV · FB</span></div></section>
 
         <footer class="footer"><span>UPLOAD DESK · LOCAL MEDIA WORKSPACE</span><span id="lastUpdated">마지막 동기화 —</span></footer>
       </main>
