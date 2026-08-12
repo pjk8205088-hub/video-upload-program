@@ -26,6 +26,17 @@ test('Naver Clip metadata gets a format-safe description and category recommenda
   assert.equal(localMetadata({ fileName: '상품 정보와 할인 리뷰.mp4' }).naverClip.secondaryCategory, '상품 정보');
 });
 
+test('Naver Clip registration keeps publish options on the job', async () => withServer(async (base) => {
+  const video = await upload(base, 1, '상품 정보.mp4');
+  const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'naver', displayName: '네이버 클립', handle: 'shopping-channel' }) });
+  await json(base, `/api/accounts/${account.payload.account.id}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: [1] }) });
+  const campaign = await json(base, '/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: '쇼핑 클립', scheduledAt: new Date().toISOString(), routes: [{ accountId: account.payload.account.id, slotNumber: 1 }], naverClip: { description: '상품 정보를 자세히 소개합니다.', primaryCategory: '쇼핑', secondaryCategory: '상품 정보', publicEnabled: false, scheduleRegistration: true, schedulePrivate: true, country: 'kr', commentsAllowed: 'deny' } }) });
+  assert.equal(campaign.response.status, 201);
+  assert.equal(campaign.payload.campaign.jobs[0].clipMetadata.primaryCategory, '쇼핑');
+  assert.equal(campaign.payload.campaign.jobs[0].clipMetadata.publicEnabled, false);
+  assert.equal(campaign.payload.campaign.jobs[0].clipMetadata.commentsAllowed, 'deny');
+}));
+
 test('TikTok account connection requires a connected Facebook account', async () => withServer(async (base) => {
   const blocked = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'tiktok', displayName: 'TikTok 채널', handle: '@tiktok' }) });
   assert.equal(blocked.response.status, 400);

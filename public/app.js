@@ -136,7 +136,7 @@ function announcePublishedJobs(campaign) {
   drainUploadAnnouncements();
 }
 
-async function uploadAccountVideos(accountId) {
+async function uploadAccountVideos(accountId, clipOverride = null) {
   const account = state.accounts.find((item) => item.id === accountId);
   if (!account) return;
   const routedVideos = (account.slotNumbers || []).map((slotNumber) => ({ slotNumber, video: videoForSlot(slotNumber) })).filter(({ video }) => video);
@@ -151,7 +151,8 @@ async function uploadAccountVideos(accountId) {
       const generated = await api('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: firstVideo.id, provider: 'naver' }) });
       Object.assign(firstVideo, generated.video); metadata = generated.metadata;
     }
-    const created = await api('/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: metadata.naverClip?.title || metadata.title || `${provider.label} ${routedVideos[0].slotNumber}번 동영상`, description: metadata.naverClip?.description || metadata.description || `${provider.label}에 바로 업로드합니다.`, hashtags: metadata.naverClip?.hashtags || metadata.hashtags || ['#동영상', '#콘텐츠'], naverClip: account.provider === 'naver' ? metadata.naverClip : null, scheduledAt: new Date().toISOString(), privacy: 'public', routes }) });
+    const naverClip = account.provider === 'naver' ? { ...(metadata.naverClip || {}), ...(clipOverride || {}) } : null;
+    const created = await api('/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: naverClip?.title || metadata.title || `${provider.label} ${routedVideos[0].slotNumber}번 동영상`, description: naverClip?.description || metadata.description || `${provider.label}에 바로 업로드합니다.`, hashtags: naverClip?.hashtags || metadata.hashtags || ['#동영상', '#콘텐츠'], naverClip, scheduledAt: new Date().toISOString(), privacy: 'public', routes }) });
     state.campaigns.unshift(created.campaign);
     renderAll();
     const result = await api(`/api/campaigns/${encodeURIComponent(created.campaign.id)}/run`, { method: 'POST' });
@@ -342,24 +343,33 @@ function renderComments() {
 
 function renderLogs() { $('#logsList').innerHTML = state.logs.length ? state.logs.slice(0, 40).map((log) => `<div class="log-row"><time>${formatDate(log.createdAt, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><b>${escapeHtml(log.event)}</b><span>${escapeHtml(log.message)}</span></div>`).join('') : '<div class="empty-inline">아직 기록된 작업이 없습니다.</div>'; }
 function renderSettings() { for (const key of ['launchAtStartup', 'startMinimized', 'autoUpdate']) $(`#${key}`).checked = Boolean(state.settings[key]); }
-function hasNaverClipRoute() { return state.accounts.some((account) => account.provider === 'naver' && (account.slotNumbers || []).some((slot) => videoForSlot(slot))); }
+function hasNaverClipRoute() { return Boolean(videoForSlot(state.selectedSlot)) && state.accounts.some((account) => account.provider === 'naver' && (account.slotNumbers || []).includes(state.selectedSlot)); }
 function applyNaverClipMetadata(clip, force = false) {
   if (!clip) return;
   const description = $('#naverClipDescription'); const primary = $('#naverClipCategoryPrimary'); const secondary = $('#naverClipCategorySecondary');
   if (description && (force || !description.value.trim())) description.value = clip.description || '';
   if (primary && (force || !primary.value)) primary.value = clip.primaryCategory || '';
   if (secondary && (force || !secondary.value)) secondary.value = clip.secondaryCategory || '';
+  const publicToggle = $('#naverClipPublic'); const scheduleToggle = $('#naverClipSchedule'); const privateScheduleToggle = $('#naverClipPrivateSchedule');
+  if (publicToggle && (force || clip.publicEnabled !== undefined)) publicToggle.checked = clip.publicEnabled !== false;
+  if (scheduleToggle && (force || clip.scheduleRegistration !== undefined)) scheduleToggle.checked = Boolean(clip.scheduleRegistration);
+  if (privateScheduleToggle && (force || clip.schedulePrivate !== undefined)) privateScheduleToggle.checked = Boolean(clip.schedulePrivate);
+  if (clip.country) document.querySelector(`input[name="naverClipCountry"][value="${clip.country}"]`)?.click();
+  if (clip.commentsAllowed) document.querySelector(`input[name="naverClipComments"][value="${clip.commentsAllowed}"]`)?.click();
   const hint = $('#naverClipCategoryHint'); if (hint && primary?.value && secondary?.value) hint.textContent = `${primary.value} · ${secondary.value} 카테고리를 자동 추천했습니다.`;
 }
 function renderNaverClipOptions() {
   const panel = $('#naverClipOptions'); if (!panel) return;
   const visible = hasNaverClipRoute(); panel.hidden = !visible;
-  if (visible) applyNaverClipMetadata(videoForSlot(state.selectedSlot)?.aiMetadata?.naverClip);
+  const clip = videoForSlot(state.selectedSlot)?.aiMetadata?.naverClip;
+  if (visible) applyNaverClipMetadata(clip);
+  const ready = visible && ($('#naverClipDescription')?.value.trim().length || 0) >= 10 && Boolean($('#naverClipCategoryPrimary')?.value) && Boolean($('#naverClipCategorySecondary')?.value);
+  const registerButton = $('#registerNaverClipButton'); if (registerButton) registerButton.disabled = !ready;
 }
 function readNaverClipForm() {
   const description = $('#naverClipDescription')?.value.trim() || ''; const primaryCategory = $('#naverClipCategoryPrimary')?.value || ''; const secondaryCategory = $('#naverClipCategorySecondary')?.value || '';
   if (!description && !primaryCategory && !secondaryCategory) return null;
-  const clip = { title: $('#campaignTitle')?.value.trim() || '', description, hashtags: ($('#campaignHashtags')?.value || '').split(/\s+/).map((tag) => tag.trim()).filter(Boolean), primaryCategory, secondaryCategory };
+  const clip = { title: $('#campaignTitle')?.value.trim() || '', description, hashtags: ($('#campaignHashtags')?.value || '').split(/\s+/).map((tag) => tag.trim()).filter(Boolean), primaryCategory, secondaryCategory, publicEnabled: $('#naverClipPublic')?.checked !== false, scheduleRegistration: Boolean($('#naverClipSchedule')?.checked), schedulePrivate: Boolean($('#naverClipPrivateSchedule')?.checked), country: document.querySelector('input[name="naverClipCountry"]:checked')?.value || 'all', commentsAllowed: document.querySelector('input[name="naverClipComments"]:checked')?.value || 'allow' };
   const video = videoForSlot(state.selectedSlot); if (video) video.aiMetadata = { ...(video.aiMetadata || {}), naverClip: clip };
   return clip;
 }
@@ -397,6 +407,7 @@ function fillMetadata(video) {
 }
 async function generateAi() { const video = videoForSlot(state.selectedSlot); if (!video) return showToast('먼저 영상을 선택해 주세요.', true); try { const result = await api('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: video.id }) }); Object.assign(video, result.video); fillMetadata(video); showToast(result.metadata.source === 'openai' ? 'OpenAI 초안을 적용했습니다.' : '로컬 fallback 초안을 적용했습니다.'); } catch (error) { showToast(error.message, true); } }
 async function generateNaverClip() { const video = videoForSlot(state.selectedSlot); if (!video) return showToast('먼저 영상을 선택해 주세요.', true); if (!hasNaverClipRoute()) return showToast('먼저 네이버 클립 계정에 영상 번호를 연결해 주세요.', true); try { const result = await api('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: video.id, provider: 'naver' }) }); Object.assign(video, result.video); fillMetadata(video); applyNaverClipMetadata(result.metadata.naverClip, true); renderAll(); showToast('네이버 클립 문구와 카테고리를 자동 선택했습니다.'); } catch (error) { showToast(error.message, true); } }
+async function registerNaverClip() { const account = state.accounts.find((item) => item.provider === 'naver' && item.status === 'connected' && (item.slotNumbers || []).includes(state.selectedSlot)); if (!account) return showToast('현재 영상에 연결된 네이버 클립 계정이 없습니다.', true); const clip = readNaverClipForm(); if (!clip || clip.description.length < 10 || !clip.primaryCategory || !clip.secondaryCategory) return showToast('클립 설명을 10자 이상 입력하고 카테고리를 선택해 주세요.', true); await uploadAccountVideos(account.id, clip); }
 
 function validateFile(file) { const extension = file.name.split('.').pop().toLowerCase(); if (!allowedExtensions.has(extension)) return 'MP4, MOV, WebM, MKV 파일만 올릴 수 있습니다.'; if (file.size > maxFileSize) return '파일 크기는 2 GB 이하여야 합니다.'; if (!file.size) return '빈 파일은 업로드할 수 없습니다.'; return null; }
 function firstFreeSlot() { return Array.from({ length: 10 }, (_, index) => index + 1).find((slot) => !videoForSlot(slot)); }
@@ -533,6 +544,7 @@ document.addEventListener('click', (event) => {
   if (target.dataset.loginProvider && requireLoginPrerequisite(target.dataset.loginProvider)) openAccountModal(target.dataset.loginProvider);
   if (target.dataset.openAccount || target.id === 'openAccountButton') openAccountModal();
   if (target.dataset.uploadAccount) uploadAccountVideos(target.dataset.uploadAccount);
+  if (target.id === 'registerNaverClipButton') registerNaverClip();
   if (target.dataset.removeAccount) removeAccount(target.dataset.removeAccount);
   if (target.dataset.runCampaign) runCampaign(target.dataset.runCampaign);
   if (target.dataset.retryJob) retryJob(target.dataset.retryJob);
@@ -542,8 +554,8 @@ document.addEventListener('click', (event) => {
   if (target.dataset.scrollTarget) document.querySelector(target.dataset.scrollTarget)?.scrollIntoView({ behavior: 'smooth' });
   if (target.dataset.windowAction && window.desktopWindow?.[target.dataset.windowAction]) window.desktopWindow[target.dataset.windowAction]();
 });
-document.addEventListener('change', (event) => { if (event.target.matches('[data-account-slot]')) toggleRoute(event.target); if (['launchAtStartup', 'startMinimized', 'autoUpdate'].includes(event.target.id)) saveSetting(event.target.id, event.target.checked); });
-document.addEventListener('input', (event) => { if (event.target.id === 'workspaceSearch') filterWorkspace(event.target.value); });
+document.addEventListener('change', (event) => { if (event.target.matches('[data-account-slot]')) toggleRoute(event.target); if (['launchAtStartup', 'startMinimized', 'autoUpdate'].includes(event.target.id)) saveSetting(event.target.id, event.target.checked); if (event.target.closest('#naverClipOptions')) renderNaverClipOptions(); });
+document.addEventListener('input', (event) => { if (event.target.id === 'workspaceSearch') filterWorkspace(event.target.value); if (event.target.closest('#naverClipOptions')) renderNaverClipOptions(); });
 document.addEventListener('keydown', (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); $('#workspaceSearch')?.focus(); } });
 $('#chooseButton').addEventListener('click', (event) => { event.stopPropagation(); startFilePicker('auto'); });
 $('#dropZone').addEventListener('click', (event) => { if (!event.target.closest('button')) startFilePicker('auto'); });

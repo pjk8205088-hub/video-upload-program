@@ -114,7 +114,7 @@ function cleanText(value, fallback = '', max = 1000) {
 
 function cleanNaverClipMetadata(value) {
   if (!value || typeof value !== 'object') return null;
-  return { title: cleanText(value.title, '', 80), description: cleanText(value.description, '', 300), hashtags: Array.isArray(value.hashtags) ? value.hashtags.map((tag) => cleanText(tag, '', 40)).filter(Boolean).slice(0, 8) : [], primaryCategory: cleanText(value.primaryCategory, '라이프 이벤트', 40), secondaryCategory: cleanText(value.secondaryCategory, '라이프 이벤트', 40) };
+  return { title: cleanText(value.title, '', 80), description: cleanText(value.description, '', 300), hashtags: Array.isArray(value.hashtags) ? value.hashtags.map((tag) => cleanText(tag, '', 40)).filter(Boolean).slice(0, 8) : [], primaryCategory: cleanText(value.primaryCategory, '라이프 이벤트', 40), secondaryCategory: cleanText(value.secondaryCategory, '라이프 이벤트', 40), publicEnabled: value.publicEnabled !== false, scheduleRegistration: Boolean(value.scheduleRegistration), schedulePrivate: Boolean(value.schedulePrivate), country: value.country === 'kr' ? 'kr' : 'all', commentsAllowed: value.commentsAllowed === 'deny' ? 'deny' : 'allow' };
 }
 
 function validSlot(value) {
