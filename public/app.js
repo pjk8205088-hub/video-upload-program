@@ -18,7 +18,7 @@ const VIDEO_PROFILE = Object.freeze({ width: 1080, height: 1920, ratio: 9 / 16, 
 const estimatedProfileBytes = Math.ceil(((VIDEO_PROFILE.videoBitrate + VIDEO_PROFILE.audioBitrate) / 8) * VIDEO_PROFILE.durationSeconds);
 const maxFileSize = Math.ceil(estimatedProfileBytes * 1.1);
 const NAVER_CLIP_CATEGORIES = [
-  { primary: '라이프 이벤트', secondary: '라이프 이벤트' }, { primary: '여행', secondary: '여행지' }, { primary: '푸드', secondary: '레시피' },
+  { primary: '쇼핑', secondary: '상품 정보' }, { primary: '라이프 이벤트', secondary: '라이프 이벤트' }, { primary: '여행', secondary: '여행지' }, { primary: '푸드', secondary: '레시피' },
   { primary: '뷰티', secondary: '뷰티 팁' }, { primary: '패션', secondary: '스타일링' }, { primary: '스포츠', secondary: '스포츠' },
   { primary: '엔터테인먼트', secondary: '댄스' }, { primary: '반려동물', secondary: '반려동물' }, { primary: '교육', secondary: '노하우' }
 ];

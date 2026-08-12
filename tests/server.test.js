@@ -22,6 +22,8 @@ test('Naver Clip metadata gets a format-safe description and category recommenda
   assert.equal(metadata.naverClip.secondaryCategory, '여행지');
   assert.ok(metadata.naverClip.description.length <= 300);
   assert.equal(localMetadata({ fileName: '3.mp4' }).naverClip.primaryCategory, '라이프 이벤트');
+  assert.equal(localMetadata({ fileName: '상품 정보와 할인 리뷰.mp4' }).naverClip.primaryCategory, '쇼핑');
+  assert.equal(localMetadata({ fileName: '상품 정보와 할인 리뷰.mp4' }).naverClip.secondaryCategory, '상품 정보');
 });
 
 test('TikTok account connection requires a connected Facebook account', async () => withServer(async (base) => {
