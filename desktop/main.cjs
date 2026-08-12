@@ -8,6 +8,7 @@ let ensureStorage;
 let mainWindow;
 let localServer;
 let autoUpdater;
+let activeNaverUploadWindow;
 
 const AUTH_CONFIG = {
   instagram: { url: 'https://www.instagram.com/accounts/login/', uploadUrl: 'https://www.instagram.com/', cookieUrls: ['https://www.instagram.com'], cookieNames: ['sessionid', 'ds_user_id'] },
@@ -102,6 +103,137 @@ async function openProviderUpload(provider) {
   }
 }
 
+function storedVideoPath(storedName) {
+  const safeName = path.basename(String(storedName || ''));
+  if (!safeName || safeName === '.') return '';
+  const storageRoot = process.env.UPLOAD_DESK_DATA_DIR || path.join(app.getPath('userData'), 'storage');
+  return path.join(storageRoot, 'uploads', safeName);
+}
+
+function reportNaverProgress(progress) {
+  if (!mainWindow?.isDestroyed()) mainWindow.webContents.send('naver-upload:progress', progress);
+}
+
+async function setNaverFileInput(uploadWindow, filePath) {
+  const debuggerSession = uploadWindow.webContents.debugger;
+  let attachedHere = false;
+  try {
+    try { debuggerSession.attach('1.3'); attachedHere = true; } catch (error) {
+      if (!String(error?.message || error).toLowerCase().includes('already attached')) throw error;
+    }
+    await debuggerSession.sendCommand('DOM.enable');
+    const { root } = await debuggerSession.sendCommand('DOM.getDocument', { depth: -1, pierce: true });
+    const { nodeIds } = await debuggerSession.sendCommand('DOM.querySelectorAll', { nodeId: root.nodeId, selector: 'input[type="file"]' });
+    if (!nodeIds?.length) throw new Error('네이버 클립 업로드 화면에서 파일 선택 입력을 찾지 못했습니다.');
+    for (const nodeId of nodeIds) await debuggerSession.sendCommand('DOM.setFileInputFiles', { nodeId, files: [filePath] });
+  } finally {
+    if (attachedHere) {
+      try { debuggerSession.detach(); } catch {}
+    }
+  }
+}
+
+function naverPageScript(step, payload = {}) {
+  const serialized = JSON.stringify(payload).replace(/</g, '\\u003c');
+  return `(async () => {
+    const payload = ${serialized};
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => { if (!element) return false; const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'; };
+    const textOf = (element) => String(element?.innerText || element?.textContent || '').replace(/\\s+/g, ' ').trim();
+    const all = (selector) => [...document.querySelectorAll(selector)].filter(visible);
+    const exact = (value) => all('button, a, [role="button"], label, span').find((element) => textOf(element) === value);
+    const contains = (value) => all('button, a, [role="button"], label, span').find((element) => textOf(element).includes(value));
+    const click = (element) => { if (!element) return false; (element.closest('button, a, [role="button"], label') || element).click(); return true; };
+    const clickText = (values) => { for (const value of values) { if (click(exact(value)) || click(contains(value))) return value; } return ''; };
+    const waitFor = async (predicate, timeout = 45000) => { const end = Date.now() + timeout; while (Date.now() < end) { const result = predicate(); if (result) return result; await wait(350); } return null; };
+    const setValue = (element, value) => { if (!element) return false; const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set; setter?.call(element, value); if (!setter) element.value = value; element.dispatchEvent(new Event('input', { bubbles: true })); element.dispatchEvent(new Event('change', { bubbles: true })); return true; };
+    const chooseSelect = (desired, index = 0) => { const selects = all('select'); const select = selects[index]; if (!select) return false; const options = [...select.options]; const option = options.find((item) => desired && (item.textContent || '').includes(desired)) || options.find((item) => item.value && !item.disabled && !/선택|카테고리/.test(item.textContent || '')); if (!option) return false; select.value = option.value; select.dispatchEvent(new Event('input', { bubbles: true })); select.dispatchEvent(new Event('change', { bubbles: true })); return true; };
+    const descriptionValue = String(payload.description || '').trim() + (payload.hashtags?.length ? '\\n\\n' + payload.hashtags.join(' ') : '');
+    if (${JSON.stringify(step)} === 'open') {
+      if (document.querySelector('input[type="file"]')) return { ready: true, action: 'already-open' };
+      clickText(['+ 업로드', '업로드']);
+      const ready = await waitFor(() => document.querySelector('input[type="file"]'));
+      return { ready: Boolean(ready), action: 'open-upload' };
+    }
+    if (${JSON.stringify(step)} === 'prepare') {
+      const editor = await waitFor(() => all('textarea, [contenteditable="true"]')[0], 60000);
+      if (editor && descriptionValue) { if (editor.isContentEditable) { editor.textContent = descriptionValue; editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: descriptionValue })); } else setValue(editor, descriptionValue); }
+      const coverButtons = all('button, [role="button"]').filter((element) => element.querySelector('img') && element.getBoundingClientRect().width >= 35 && element.getBoundingClientRect().width <= 190).sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+      if (coverButtons.length) click(coverButtons[Math.min(Number(payload.coverIndex || 2), coverButtons.length - 1)]);
+      chooseSelect(payload.primaryCategory || '', 0); chooseSelect(payload.secondaryCategory || '', 1);
+      return { ready: Boolean(editor), coverCount: coverButtons.length, descriptionFilled: Boolean(editor && descriptionValue) };
+    }
+    if (${JSON.stringify(step)} === 'shopping') {
+      const clicked = clickText(['쇼핑']);
+      if (!clicked) return { ready: false, reason: 'shopping-tag-button-not-found' };
+      await wait(700);
+      const selected = clickText(['선택']);
+      if (selected) await wait(500);
+      clickText(['닫기', '×']);
+      return { ready: true, selected: Boolean(selected) };
+    }
+    if (${JSON.stringify(step)} === 'publish-settings') {
+      const publicText = exact('전체 공개') || contains('전체 공개');
+      if (publicText) { const control = publicText.closest('label')?.querySelector('input, [role="switch"]') || publicText.closest('button, label, [role="button"]'); if (control?.matches('input[type="checkbox"]') && !control.checked) control.click(); else if (control && control.getAttribute('aria-checked') === 'false') control.click(); }
+      const comments = exact('허용') || contains('허용'); if (comments) click(comments);
+      return { ready: true, publicFound: Boolean(publicText) };
+    }
+    if (${JSON.stringify(step)} === 'register') {
+      const button = exact('등록') || all('button, [role="button"]').find((element) => /^등록$/.test(textOf(element)));
+      if (!button) return { ready: false, reason: 'register-button-not-found' };
+      click(button);
+      await wait(2500);
+      const done = await waitFor(() => Boolean(exact('+ 업로드')) || /등록 완료|게시 완료/.test(document.body.innerText || ''), 60000);
+      return { ready: Boolean(done), registered: true };
+    }
+    if (${JSON.stringify(step)} === 'next') {
+      clickText(['+ 업로드', '업로드']);
+      const ready = await waitFor(() => document.querySelector('input[type="file"]'));
+      return { ready: Boolean(ready), action: 'next-upload' };
+    }
+    return { ready: false, reason: 'unknown-step' };
+  })()`;
+}
+
+async function runNaverClipAutomation(payload = {}) {
+  const config = AUTH_CONFIG.naver;
+  const authSession = session.fromPartition('persist:upload-desk-auth');
+  if (!await hasProviderAuthCookieInSession(authSession, 'naver')) return { opened: false, reason: 'login_required' };
+  const slots = Array.isArray(payload.slots) ? payload.slots.filter((item) => item?.storedName).slice(0, 10) : [];
+  if (!slots.length) return { opened: false, reason: 'no_videos' };
+  if (activeNaverUploadWindow && !activeNaverUploadWindow.isDestroyed()) activeNaverUploadWindow.close();
+  const uploadWindow = new BrowserWindow({ parent: mainWindow, width: 1440, height: 920, minWidth: 1080, minHeight: 720, title: '네이버 클립 자동 등록', autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: 'persist:upload-desk-auth' } });
+  activeNaverUploadWindow = uploadWindow;
+  const publishedSlots = [];
+  try {
+    await uploadWindow.loadURL(config.uploadUrl);
+    for (let index = 0; index < slots.length; index += 1) {
+      const slot = slots[index];
+      const filePath = storedVideoPath(slot.storedName);
+      if (!filePath || !fs.existsSync(filePath)) throw new Error(`${slot.slotNumber}번 영상 파일을 찾지 못했습니다.`);
+      reportNaverProgress({ status: 'preparing', slotNumber: slot.slotNumber, index: index + 1, total: slots.length, message: `${slot.slotNumber}번 영상 업로드 화면 준비 중` });
+      const openStep = index === 0 ? 'open' : 'next';
+      const opened = await uploadWindow.webContents.executeJavaScript(naverPageScript(openStep), true);
+      if (!opened?.ready) throw new Error(`${slot.slotNumber}번 업로드 화면을 준비하지 못했습니다. 네이버 클립 페이지에서 로그인 상태를 확인해 주세요.`);
+      await setNaverFileInput(uploadWindow, filePath);
+      const prepared = await uploadWindow.webContents.executeJavaScript(naverPageScript('prepare', { ...slot.metadata, coverIndex: 2 }), true);
+      if (!prepared?.ready) throw new Error(`${slot.slotNumber}번 영상 설명 입력란을 찾지 못했습니다.`);
+      const shopping = await uploadWindow.webContents.executeJavaScript(naverPageScript('shopping', { infoTag: '쇼핑' }), true);
+      if (!shopping?.ready) throw new Error('네이버 클립 정보태그 쇼핑 버튼을 찾지 못했습니다. 열린 창에서 수동으로 확인해 주세요.');
+      await uploadWindow.webContents.executeJavaScript(naverPageScript('publish-settings'), true);
+      reportNaverProgress({ status: 'registering', slotNumber: slot.slotNumber, index: index + 1, total: slots.length, message: `${slot.slotNumber}번 영상 등록 중` });
+      const registered = await uploadWindow.webContents.executeJavaScript(naverPageScript('register'), true);
+      if (!registered?.registered) throw new Error(`${slot.slotNumber}번 영상 등록 버튼을 찾지 못했습니다.`);
+      publishedSlots.push(slot.slotNumber);
+      reportNaverProgress({ status: 'published', slotNumber: slot.slotNumber, index: index + 1, total: slots.length, message: `네이버 클립 ${slot.slotNumber}번 등록 완료` });
+    }
+    return { opened: true, provider: 'naver', publishedSlots };
+  } catch (error) {
+    reportNaverProgress({ status: 'failed', message: error.message, publishedSlots });
+    return { opened: true, provider: 'naver', publishedSlots, failed: true, reason: 'automation_failed', message: error.message };
+  }
+}
+
 function reportStartupError(error) {
   const message = error?.stack || String(error);
   try { const logPath = path.join(app.getPath('userData'), 'startup-error.log'); fs.mkdirSync(path.dirname(logPath), { recursive: true }); fs.writeFileSync(logPath, message, 'utf8'); } catch {}
@@ -122,6 +254,7 @@ function registerIpc() {
   });
   ipcMain.handle('auth:verify-login', (_event, provider) => verifyProviderLogin(String(provider || '').trim().toLowerCase()));
   ipcMain.handle('auth:open-upload', (_event, provider) => openProviderUpload(String(provider || '').trim().toLowerCase()));
+  ipcMain.handle('naver:upload-clips', (_event, payload) => runNaverClipAutomation(payload));
   ipcMain.handle('auth:force-logout', (_event, provider) => clearProviderAuth(String(provider || '').trim().toLowerCase()));
   ipcMain.handle('speech:speak', (_event, text) => {
     if (process.platform !== 'win32' || !String(text || '').trim()) return { supported: false };
