@@ -24,6 +24,9 @@ test('Naver Clip metadata gets a format-safe description and category recommenda
   assert.equal(localMetadata({ fileName: '3.mp4' }).naverClip.primaryCategory, '라이프 이벤트');
   assert.equal(localMetadata({ fileName: '상품 정보와 할인 리뷰.mp4' }).naverClip.primaryCategory, '쇼핑');
   assert.equal(localMetadata({ fileName: '상품 정보와 할인 리뷰.mp4' }).naverClip.secondaryCategory, '상품 정보');
+  assert.equal(metadata.instagram.shareToFeed, true);
+  assert.equal(metadata.instagram.allowComments, true);
+  assert.ok(metadata.instagram.caption.length <= 2200);
 });
 
 test('Naver Clip registration keeps publish options on the job', async () => withServer(async (base) => {
@@ -35,6 +38,18 @@ test('Naver Clip registration keeps publish options on the job', async () => wit
   assert.equal(campaign.payload.campaign.jobs[0].clipMetadata.primaryCategory, '쇼핑');
   assert.equal(campaign.payload.campaign.jobs[0].clipMetadata.publicEnabled, false);
   assert.equal(campaign.payload.campaign.jobs[0].clipMetadata.commentsAllowed, 'deny');
+}));
+
+test('Instagram Reels metadata persists on the job', async () => withServer(async (base) => {
+  const video = await upload(base, 1, 'reels-video.mp4');
+  const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'instagram', displayName: 'Instagram Reels', handle: '@reels' }) });
+  await json(base, `/api/accounts/${account.payload.account.id}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: [1] }) });
+  const campaign = await json(base, '/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: '릴스 게시', scheduledAt: new Date().toISOString(), routes: [{ accountId: account.payload.account.id, slotNumber: video.payload.video.slotNumber }], instagram: { caption: '새 릴스 캡션입니다.', hashtags: ['#릴스'], shareToFeed: false, allowComments: false } }) });
+  assert.equal(campaign.response.status, 201);
+  assert.equal(campaign.payload.campaign.jobs[0].instagramMetadata.caption, '새 릴스 캡션입니다.');
+  assert.deepEqual(campaign.payload.campaign.jobs[0].instagramMetadata.hashtags, ['#릴스']);
+  assert.equal(campaign.payload.campaign.jobs[0].instagramMetadata.shareToFeed, false);
+  assert.equal(campaign.payload.campaign.jobs[0].instagramMetadata.allowComments, false);
 }));
 
 test('TikTok account connection requires a connected Facebook account', async () => withServer(async (base) => {

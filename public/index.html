@@ -66,6 +66,13 @@
               <div class="form-grid"><label>콘텐츠 제목<input id="campaignTitle" maxlength="120" placeholder="AI 생성 버튼으로 초안을 만들 수 있어요"></label><button class="button button-soft ai-button" id="generateAiButton" type="button">✦ AI 제목·설명 생성</button></div>
               <label>설명 / 캡션<textarea id="campaignDescription" rows="4" maxlength="1000" placeholder="채널에 공통으로 보낼 설명"></textarea></label>
               <label>해시태그<input id="campaignHashtags" maxlength="400" placeholder="#영상 #콘텐츠 #브랜드"></label>
+              <section id="instagramOptions" class="instagram-options" hidden>
+                <div class="instagram-head"><div><span class="eyebrow">INSTAGRAM REELS FORMAT</span><strong>인스타그램 릴스 자동 설정</strong><p>Instagram 계정에 연결된 프로그램 저장 슬롯 1~10번을 사용합니다.</p></div><button class="button button-soft" id="generateInstagramButton" type="button">✦ 릴스 문구 자동 생성</button></div>
+                <label>릴스 캡션<textarea id="instagramCaption" rows="4" maxlength="2200" placeholder="인스타그램 릴스에 표시할 캡션"></textarea><small class="field-hint">최대 2,200자 · 업로드 전 캡션과 해시태그를 확인하세요.</small></label>
+                <div class="instagram-check-row"><label><input id="instagramShareToFeed" type="checkbox" checked> 피드에도 공유</label><label><input id="instagramAllowComments" type="checkbox" checked> 댓글 허용</label></div>
+                <small id="instagramStatusHint" class="instagram-status-hint">Instagram 연결 영상이 있으면 릴스 게시 설정을 자동으로 준비합니다.</small>
+                <button class="button instagram-publish-button" id="publishInstagramButton" type="button" disabled>게시 <span>→</span></button>
+              </section>
               <section id="naverClipOptions" class="naver-clip-options" hidden>
                 <div class="naver-clip-head"><div><span class="eyebrow">NAVER CLIP FORMAT</span><strong>네이버 클립 자동 설정</strong><p>프로그램에 저장된 1~10번 영상 중 네이버 계정에 연결된 슬롯을 사용합니다.</p></div><button class="button button-soft" id="generateNaverClipButton" type="button">✦ 클립 문구·카테고리 자동 생성</button></div>
                 <label>클립 설명<textarea id="naverClipDescription" rows="3" maxlength="300" placeholder="네이버 클립에 표시할 설명"></textarea><small class="field-hint">최대 300자 · 업로드 시 네이버 클립용 문구로 사용됩니다.</small></label>
