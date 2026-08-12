@@ -1,6 +1,6 @@
 const state = {
   videos: [], accounts: [], campaigns: [], analytics: { jobs: [], totals: {} }, comments: [], logs: [], settings: {},
-  selectedSlot: 1, queue: new Map(), calendarMonth: new Date(), pendingUploadSlot: null, pendingQuickProvider: '', quickProviders: new Set(), announcedJobs: new Set(), uploadNoticeQueue: [], isAnnouncingUpload: false, campaignsLoaded: false
+  selectedSlot: 1, queue: new Map(), calendarMonth: new Date(), pendingUploadSlot: null, pendingQuickProvider: '', quickProviders: new Set(), announcedJobs: new Set(), uploadNoticeQueue: [], isAnnouncingUpload: false, campaignsLoaded: false, naverClipAutoSlots: new Set()
 };
 
 const providers = {
@@ -362,8 +362,15 @@ function applyNaverClipMetadata(clip, force = false) {
 function renderNaverClipOptions() {
   const panel = $('#naverClipOptions'); if (!panel) return;
   const visible = hasNaverClipRoute(); panel.hidden = !visible;
-  const clip = videoForSlot(state.selectedSlot)?.aiMetadata?.naverClip;
+  const video = videoForSlot(state.selectedSlot); const clip = video?.aiMetadata?.naverClip;
   if (visible) applyNaverClipMetadata(clip);
+  const generating = visible && video && !clip && state.naverClipAutoSlots.has(video.id);
+  const generateButton = $('#generateNaverClipButton'); if (generateButton) { generateButton.disabled = Boolean(generating); generateButton.textContent = generating ? '클립 설정 자동 준비 중…' : '✦ 클립 문구·카테고리 자동 생성'; }
+  if (visible && video && !clip && !state.naverClipAutoSlots.has(video.id)) {
+    state.naverClipAutoSlots.add(video.id);
+    const hint = $('#naverClipCategoryHint'); if (hint) hint.textContent = '클립 문구와 카테고리를 자동으로 준비하고 있습니다.';
+    generateNaverClipForVideo(video).then(() => renderAll()).catch(() => { state.naverClipAutoSlots.delete(video.id); const retryHint = $('#naverClipCategoryHint'); if (retryHint) retryHint.textContent = '자동 준비에 실패했습니다. 생성 버튼으로 다시 시도해 주세요.'; renderNaverClipOptions(); });
+  }
   const ready = visible && ($('#naverClipDescription')?.value.trim().length || 0) >= 10 && Boolean($('#naverClipCategoryPrimary')?.value) && Boolean($('#naverClipCategorySecondary')?.value);
   const registerButton = $('#registerNaverClipButton'); if (registerButton) registerButton.disabled = !ready;
 }
@@ -407,7 +414,8 @@ function fillMetadata(video) {
   applyNaverClipMetadata(meta.naverClip);
 }
 async function generateAi() { const video = videoForSlot(state.selectedSlot); if (!video) return showToast('먼저 영상을 선택해 주세요.', true); try { const result = await api('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: video.id }) }); Object.assign(video, result.video); fillMetadata(video); showToast(result.metadata.source === 'openai' ? 'OpenAI 초안을 적용했습니다.' : '로컬 fallback 초안을 적용했습니다.'); } catch (error) { showToast(error.message, true); } }
-async function generateNaverClip() { const video = videoForSlot(state.selectedSlot); if (!video) return showToast('먼저 영상을 선택해 주세요.', true); if (!hasNaverClipRoute()) return showToast('먼저 네이버 클립 계정에 영상 번호를 연결해 주세요.', true); try { const result = await api('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: video.id, provider: 'naver' }) }); Object.assign(video, result.video); fillMetadata(video); applyNaverClipMetadata(result.metadata.naverClip, true); renderAll(); showToast('네이버 클립 문구와 카테고리를 자동 선택했습니다.'); } catch (error) { showToast(error.message, true); } }
+async function generateNaverClipForVideo(video) { const result = await api('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: video.id, provider: 'naver' }) }); Object.assign(video, result.video); return result.metadata; }
+async function generateNaverClip() { const video = videoForSlot(state.selectedSlot); if (!video) return showToast('먼저 영상을 선택해 주세요.', true); if (!hasNaverClipRoute()) return showToast('먼저 네이버 클립 계정에 영상 번호를 연결해 주세요.', true); try { const metadata = await generateNaverClipForVideo(video); state.naverClipAutoSlots.delete(video.id); fillMetadata(video); applyNaverClipMetadata(metadata.naverClip, true); renderAll(); showToast('네이버 클립 문구와 카테고리를 자동 선택했습니다.'); } catch (error) { showToast(error.message, true); } }
 async function registerNaverClip() { const account = state.accounts.find((item) => item.provider === 'naver' && item.status === 'connected' && (item.slotNumbers || []).includes(state.selectedSlot)); if (!account) return showToast('현재 영상에 연결된 네이버 클립 계정이 없습니다.', true); const clip = readNaverClipForm(); if (!clip || clip.description.length < 10 || !clip.primaryCategory || !clip.secondaryCategory) return showToast('클립 설명을 10자 이상 입력하고 카테고리를 선택해 주세요.', true); await uploadAccountVideos(account.id, clip, '등록'); }
 
 function validateFile(file) { const extension = file.name.split('.').pop().toLowerCase(); if (!allowedExtensions.has(extension)) return 'MP4, MOV, WebM, MKV 파일만 올릴 수 있습니다.'; if (file.size > maxFileSize) return '파일 크기는 2 GB 이하여야 합니다.'; if (!file.size) return '빈 파일은 업로드할 수 없습니다.'; return null; }
