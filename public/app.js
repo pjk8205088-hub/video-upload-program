@@ -1,6 +1,6 @@
 const state = {
   videos: [], accounts: [], campaigns: [], analytics: { jobs: [], totals: {} }, comments: [], logs: [], settings: {},
-  selectedSlot: 1, queue: new Map(), calendarMonth: new Date(), pendingUploadSlot: null, pendingQuickProvider: '', quickProviders: new Set(), announcedJobs: new Set(), uploadNoticeQueue: [], isAnnouncingUpload: false, campaignsLoaded: false, naverClipAutoSlots: new Set(), instagramAutoSlots: new Set()
+  selectedSlot: 1, queue: new Map(), calendarMonth: new Date(), pendingUploadSlot: null, pendingQuickProvider: '', quickProviders: new Set(), announcedJobs: new Set(), uploadNoticeQueue: [], isAnnouncingUpload: false, campaignsLoaded: false, naverClipAutoSlots: new Set(), instagramAutoSlots: new Set(), loginStates: {}
 };
 
 const providers = {
@@ -8,10 +8,10 @@ const providers = {
 };
 const supportedProviderKeys = new Set(Object.keys(providers));
 const loginProviders = [
-  { key: 'instagram', label: 'Instagram', code: 'IG', service: 'Meta OAuth', accent: 'coral', title: 'Instagram Business 계정', description: '릴스와 피드 게시 권한을 연결합니다.', scopes: 'instagram_content_publish · instagram_basic' },
+  { key: 'instagram', label: 'Instagram', code: 'IG', service: 'Meta OAuth', accent: 'coral', title: 'Instagram Business 계정', description: '릴스와 피드 게시 권한을 연결합니다.', scopes: 'instagram_content_publish · instagram_basic', loginUrl: 'https://www.instagram.com/accounts/login/' },
   { key: 'tiktok', label: 'TikTok', code: 'TT', service: 'TikTok OAuth', accent: 'violet', title: 'TikTok 계정', description: 'Facebook 로그인으로 TikTok 연결을 진행합니다.', scopes: 'video.publish · user.info.basic', requiresProvider: 'facebook', loginUrl: 'https://www.tiktok.com/login/phone-or-email/email' },
-  { key: 'naver', label: '네이버 클립', code: 'NV', service: 'NAVER OAuth', accent: 'green', title: '네이버 클립 채널', description: '클립 콘텐츠 게시 권한을 연결합니다.', scopes: 'clip.publish · profile.read' },
-  { key: 'facebook', label: 'Facebook', code: 'FB', service: 'Meta OAuth', accent: 'blue', title: 'Facebook 페이지', description: '페이지 동영상 게시와 댓글 관리 권한을 연결합니다.', scopes: 'pages_manage_posts · pages_read_engagement' }
+  { key: 'naver', label: '네이버 클립', code: 'NV', service: 'NAVER OAuth', accent: 'green', title: '네이버 클립 채널', description: '클립 콘텐츠 게시 권한을 연결합니다.', scopes: 'clip.publish · profile.read', loginUrl: 'https://nid.naver.com/nidlogin.login' },
+  { key: 'facebook', label: 'Facebook', code: 'FB', service: 'Meta OAuth', accent: 'blue', title: 'Facebook 페이지', description: '페이지 동영상 게시와 댓글 관리 권한을 연결합니다.', scopes: 'pages_manage_posts · pages_read_engagement', loginUrl: 'https://www.facebook.com/?locale=ko_KR' }
 ];
 const allowedExtensions = new Set(['mp4', 'mov', 'webm', 'mkv']);
 const VIDEO_PROFILE = Object.freeze({ width: 1080, height: 1920, ratio: 9 / 16, durationSeconds: 60, videoBitrate: 8_000_000, audioBitrate: 128_000 });
@@ -34,18 +34,21 @@ function videoForSlot(slot) { return state.videos.find((video) => video.slotNumb
 function showToast(message, isError = false) { const toast = $('#toast'); toast.textContent = message; toast.classList.toggle('is-error', isError); toast.classList.add('is-visible'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove('is-visible'), 3400); }
 async function api(url, options = {}) { const response = await fetch(url, options); const payload = await response.json().catch(() => ({})); if (!response.ok) throw Object.assign(new Error(payload.error?.message || '요청을 처리하지 못했습니다.'), { payload, status: response.status }); return payload; }
 function loginProviderFor(key) { return loginProviders.find((item) => item.key === key); }
-function hasLoginPrerequisite(providerKey) { const provider = loginProviderFor(providerKey); return !provider?.requiresProvider || state.accounts.some((account) => account.provider === provider.requiresProvider && account.status === 'connected'); }
+function isAuthenticatedAccount(account) { return account?.status === 'connected' && account.authVerified === true; }
+function hasLoginPrerequisite(providerKey) { const provider = loginProviderFor(providerKey); return !provider?.requiresProvider || state.accounts.some((account) => account.provider === provider.requiresProvider && isAuthenticatedAccount(account)); }
 function requireLoginPrerequisite(providerKey) { const provider = loginProviderFor(providerKey); if (!provider?.requiresProvider || hasLoginPrerequisite(providerKey)) return true; const prerequisite = providerFor(provider.requiresProvider); showToast(`${provider.label}은(는) ${prerequisite.label} 로그인 후 진행할 수 있습니다.`, true); document.querySelector(`#login-${provider.requiresProvider}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return false; }
 
-function selectedRoutes() { return state.accounts.filter((account) => state.quickProviders.has(account.provider)).flatMap((account) => (account.slotNumbers || []).filter((slot) => videoForSlot(slot)).map((slotNumber) => ({ accountId: account.id, slotNumber }))); }
-function syncQuickProviders() { state.quickProviders = new Set(state.accounts.filter((account) => videoForSlot(state.selectedSlot) && (account.slotNumbers || []).includes(state.selectedSlot)).map((account) => account.provider)); }
+function selectedRoutes() { return state.accounts.filter((account) => isAuthenticatedAccount(account) && state.quickProviders.has(account.provider)).flatMap((account) => (account.slotNumbers || []).filter((slot) => videoForSlot(slot)).map((slotNumber) => ({ accountId: account.id, slotNumber }))); }
+function syncQuickProviders() { state.quickProviders = new Set(state.accounts.filter((account) => isAuthenticatedAccount(account) && videoForSlot(state.selectedSlot) && (account.slotNumbers || []).includes(state.selectedSlot)).map((account) => account.provider)); }
 
 function renderQuickPublish() {
   const target = $('#quickProviderBar');
   if (!target) return;
   const selectedVideo = videoForSlot(state.selectedSlot);
   target.innerHTML = loginProviders.map((item) => {
-    const linked = state.accounts.filter((account) => account.provider === item.key);
+    const linked = state.accounts.filter((account) => account.provider === item.key && account.status === 'connected' && account.authVerified === true);
+    const pending = state.accounts.filter((account) => account.provider === item.key && !(account.status === 'connected' && account.authVerified === true));
+    const loginState = state.loginStates[item.key] || 'idle';
     const active = linked.some((account) => (account.slotNumbers || []).includes(state.selectedSlot));
     const label = linked.length ? `${linked.length}개 계정 연결됨` : '로그인 필요';
     return `<button class="quick-provider${active ? ' is-active' : ''}${linked.length ? '' : ' needs-login'}" data-quick-provider="${item.key}" type="button" aria-pressed="${active}"><span class="quick-provider-brand quick-brand-${item.accent}">${item.code}</span><span class="quick-provider-copy"><strong>${item.label}</strong><small>${selectedVideo ? label : '먼저 영상 선택'}</small></span><span class="quick-provider-state">${active ? 'ACTIVE' : linked.length ? 'OFF' : 'LOGIN'}</span><span class="quick-provider-check">${active ? '✓' : '+'}</span></button>`;
@@ -57,7 +60,7 @@ async function activateQuickProvider(providerKey) {
   if (!requireLoginPrerequisite(providerKey)) return;
   const provider = providerFor(providerKey);
   const video = videoForSlot(state.selectedSlot);
-  const accounts = state.accounts.filter((item) => item.provider === providerKey);
+  const accounts = state.accounts.filter((item) => item.provider === providerKey && isAuthenticatedAccount(item));
   if (!video) return showToast('먼저 업로드할 슬롯 영상을 선택해 주세요.', true);
   if (!accounts.length) { state.pendingQuickProvider = providerKey; return openAccountModal(providerKey); }
   const previousSlots = new Map(accounts.map((account) => [account.id, [...(account.slotNumbers || [])]]));
@@ -140,7 +143,7 @@ async function uploadAccountVideos(accountId, clipOverride = null, actionLabel =
   const account = state.accounts.find((item) => item.id === accountId);
   if (!account) return;
   const routedVideos = (account.slotNumbers || []).map((slotNumber) => ({ slotNumber, video: videoForSlot(slotNumber) })).filter(({ video }) => video);
-  if (account.status !== 'connected') return showToast('먼저 이 계정에 로그인해 주세요.', true);
+  if (!isAuthenticatedAccount(account)) return showToast('먼저 공식 로그인에 성공해 주세요.', true);
   if (!routedVideos.length) return showToast('이 계정에 업로드할 영상을 먼저 선택해 주세요.', true);
   const provider = providerFor(account.provider);
   const firstVideo = routedVideos[0].video;
@@ -171,7 +174,7 @@ async function uploadAccountVideos(accountId, clipOverride = null, actionLabel =
 }
 
 function renderSidebarStatus() {
-  const instagramReady = state.accounts.some((account) => account.provider === 'instagram' && account.status === 'connected');
+  const instagramReady = state.accounts.some((account) => account.provider === 'instagram' && isAuthenticatedAccount(account));
   const uploadReady = state.videos.length > 0 && selectedRoutes().length > 0;
   const statuses = [
     { ready: instagramReady, light: '#instagramLoginLight', status: '#instagramLoginStatus', code: '#instagramLoginCode', readyText: '로그인 완료', waitText: '연결 필요' },
@@ -184,7 +187,7 @@ function renderSidebarStatus() {
   const target = document.querySelector('.status-inline-row');
   if (!target) return;
   const rows = loginProviders.map((item) => {
-    const ready = state.accounts.some((account) => account.provider === item.key && account.status === 'connected');
+    const ready = state.accounts.some((account) => account.provider === item.key && isAuthenticatedAccount(account));
     return `<a class="status-inline-item status-all-item" href="#login-${item.key}" aria-label="${item.label} 로그인 상태"><span class="status-light${ready ? ' is-ready' : ' is-waiting'}"></span><span><strong>${item.label}</strong><small>${ready ? '로그인 완료' : '로그인 필요'}</small></span><b class="${ready ? 'is-ready' : 'is-waiting'}">${ready ? 'GREEN' : 'RED'}</b></a>`;
   });
   const uploadReady = state.videos.length > 0 && selectedRoutes().length > 0;
@@ -196,7 +199,7 @@ function renderSidebarStatus() {
   const target = document.querySelector('.status-inline-row');
   if (!target) return;
   const rows = loginProviders.map((item) => {
-    const linkedAccounts = state.accounts.filter((account) => account.provider === item.key && account.status === 'connected');
+    const linkedAccounts = state.accounts.filter((account) => account.provider === item.key && isAuthenticatedAccount(account));
     const loggedIn = linkedAccounts.length > 0;
     const uploadReady = loggedIn && Boolean(videoForSlot(state.selectedSlot)) && linkedAccounts.some((account) => (account.slotNumbers || []).includes(state.selectedSlot));
     const light = (ready) => `<i class="status-check-light${ready ? ' is-ready' : ' is-waiting'}"></i>`;
@@ -212,7 +215,7 @@ function renderSidebarStatus() {
   const target = document.querySelector('.status-inline-row');
   if (!target) return;
   target.innerHTML = loginProviders.map((item) => {
-    const linkedAccounts = state.accounts.filter((account) => account.provider === item.key && account.status === 'connected');
+    const linkedAccounts = state.accounts.filter((account) => account.provider === item.key && isAuthenticatedAccount(account));
     const loggedIn = linkedAccounts.length > 0;
     const uploadReady = loggedIn && Boolean(videoForSlot(state.selectedSlot)) && linkedAccounts.some((account) => (account.slotNumbers || []).includes(state.selectedSlot));
     const chip = (label, ready) => `<span class="status-state-chip${ready ? ' is-ready' : ' is-waiting'}"><i class="status-check-light${ready ? ' is-ready' : ' is-waiting'}"></i>${label}<b>${ready ? 'GREEN' : 'RED'}</b></span>`;
@@ -224,7 +227,7 @@ function renderQuickPublish() {
   const target = $('#quickProviderBar');
   if (!target) return;
   target.innerHTML = loginProviders.map((item) => {
-    const linked = state.accounts.filter((account) => account.provider === item.key && account.status === 'connected');
+    const linked = state.accounts.filter((account) => account.provider === item.key && isAuthenticatedAccount(account));
     const loggedIn = linked.length > 0;
     const active = linked.some((account) => (account.slotNumbers || []).includes(state.selectedSlot));
     const slots = Array.from({ length: 10 }, (_, index) => {
@@ -244,7 +247,7 @@ async function toggleQuickProviderSlot(providerKey, slotNumber) {
   const slot = Number(slotNumber);
   const provider = providerFor(providerKey);
   const video = videoForSlot(slot);
-  const accounts = state.accounts.filter((account) => account.provider === providerKey && account.status === 'connected');
+  const accounts = state.accounts.filter((account) => account.provider === providerKey && isAuthenticatedAccount(account));
   if (!video) return showToast(`${slot}번 영상이 아직 업로드되지 않았습니다.`, true);
   if (!accounts.length) { state.selectedSlot = slot; state.pendingQuickProvider = providerKey; return openAccountModal(providerKey); }
   const previousSlots = new Map(accounts.map((account) => [account.id, [...(account.slotNumbers || [])]]));
@@ -297,10 +300,12 @@ function renderAccounts() {
     const routedVideos = (account.slotNumbers || []).map((slot) => ({ slot, video: videoForSlot(slot) })).filter(({ video }) => video).sort((a, b) => a.slot - b.slot);
     const videoPreviews = routedVideos.length ? `<div class="account-video-preview-list" aria-label="${provider.label} 연결 영상 미리보기">${routedVideos.map(({ slot, video }) => `<button class="account-video-preview" data-select-slot="${slot}" type="button" title="${slot}번 영상 ${escapeHtml(video.originalName)}"><img src="${escapeHtml(video.thumbnailUrl)}" alt="${slot}번 ${escapeHtml(video.originalName)} 썸네일"><span>${String(slot).padStart(2, '0')}</span></button>`).join('')}</div>` : '<div class="account-video-empty">선택된 영상 없음</div>';
     const switches = Array.from({ length: 10 }, (_, index) => { const slot = index + 1; const hasVideo = Boolean(videoForSlot(slot)); const checked = (account.slotNumbers || []).includes(slot); return `<label class="slot-switch${hasVideo ? '' : ' is-disabled'}" title="${hasVideo ? `${slot}번 영상을 ${provider.label}에 연결` : `${slot}번 슬롯이 비어 있습니다`}"><input type="checkbox" data-account-slot="${escapeHtml(account.id)}" data-slot-number="${slot}" ${checked ? 'checked' : ''} ${hasVideo ? '' : 'disabled'}><span>${slot}</span></label>`; }).join('');
-    const canUpload = account.status === 'connected' && routedVideos.length > 0;
-    const uploadTitle = account.status !== 'connected' ? '먼저 이 계정에 로그인해 주세요' : routedVideos.length ? `${routedVideos.length}개 영상을 즉시 업로드` : '계정에 업로드할 영상을 먼저 선택해 주세요';
+    const verified = account.status === 'connected' && account.authVerified === true;
+    const canUpload = verified && routedVideos.length > 0;
+    const uploadTitle = !verified ? '공식 로그인 확인이 필요합니다' : routedVideos.length ? `${routedVideos.length}개 영상을 즉시 업로드` : '계정에 업로드할 영상을 먼저 선택해 주세요';
     const accountActionLabel = account.provider === 'naver' ? '등록' : '동영상 올리기';
-    return `<article class="account-card provider-${account.provider}"><div class="account-head"><span class="provider-code">${provider.code}</span><div><strong>${escapeHtml(account.displayName)}</strong><small>${provider.label} · ${escapeHtml(account.handle)}</small></div><span class="connected-dot">●</span><button class="account-upload-button" data-upload-account="${escapeHtml(account.id)}" type="button" ${canUpload ? '' : 'disabled'} title="${uploadTitle}">${accountActionLabel}</button></div><div class="account-route-label"><span>게시할 번호</span><b>${checkedCount}개</b></div>${videoPreviews}<div class="slot-switches">${switches}</div><div class="account-footer"><span>${account.mode === 'sandbox' ? 'SANDBOX ADAPTER' : 'OAUTH CONNECTED'}</span><button class="text-button" data-remove-account="${escapeHtml(account.id)}" type="button">연결 해제</button></div></article>`;
+    const accountStatus = verified ? 'CONNECTED' : account.status === 'login_failed' ? 'LOGIN FAILED' : 'LOGIN REQUIRED';
+    return `<article class="account-card provider-${account.provider}${verified ? '' : ' is-auth-pending'}"><div class="account-head"><span class="provider-code">${provider.code}</span><div><strong>${escapeHtml(account.displayName)}</strong><small>${provider.label} · ${escapeHtml(account.handle)}</small></div><span class="connected-dot${verified ? '' : ' is-auth-pending'}">●</span><button class="account-upload-button" data-upload-account="${escapeHtml(account.id)}" type="button" ${canUpload ? '' : 'disabled'} title="${uploadTitle}">${accountActionLabel}</button></div><div class="account-route-label"><span>게시할 번호</span><b>${checkedCount}개</b><em class="account-status-label${verified ? ' is-connected' : ''}">${accountStatus}</em></div>${videoPreviews}<div class="slot-switches">${switches}</div><div class="account-footer"><span>${verified ? 'OAUTH CONNECTED' : 'LOGIN VERIFICATION REQUIRED'}</span><button class="text-button" data-remove-account="${escapeHtml(account.id)}" type="button">연결 해제</button></div></article>`;
   }).join('');
   renderRouteSummary();
 }
@@ -309,13 +314,14 @@ function renderLoginPages() {
   const target = $('#loginPageGrid');
   if (!target) return;
   target.innerHTML = loginProviders.map((item, index) => {
-    const linked = state.accounts.filter((account) => account.provider === item.key);
+    const linked = state.accounts.filter((account) => account.provider === item.key && isAuthenticatedAccount(account));
     const prerequisite = item.requiresProvider ? providerFor(item.requiresProvider) : null;
     const prerequisiteReady = hasLoginPrerequisite(item.key);
     const prerequisiteNotice = prerequisite ? `<div class="login-prerequisite${prerequisiteReady ? ' is-ready' : ' is-blocked'}"><span class="login-prerequisite-light"></span><span>${prerequisite.label} 로그인 ${prerequisiteReady ? '완료' : '필요'}</span>${prerequisiteReady ? '' : `<a href="#login-${item.requiresProvider}" data-scroll-target="#login-${item.requiresProvider}">${prerequisite.label} 로그인으로 이동</a>`}</div>` : '';
-    const accounts = linked.length ? linked.map((account) => `<div class="login-account"><span class="login-account-dot"></span><div><strong>${escapeHtml(account.displayName)}</strong><small>${escapeHtml(account.handle)}</small></div><span class="login-account-state">CONNECTED</span></div>`).join('') : '<div class="login-empty">아직 연결된 계정이 없습니다.</div>';
+    const accounts = linked.length ? linked.map((account) => `<div class="login-account"><span class="login-account-dot"></span><div><strong>${escapeHtml(account.displayName)}</strong><small>${escapeHtml(account.handle)}</small></div><span class="login-account-state">CONNECTED</span></div>`).join('') : '<div class="login-empty">공식 로그인 확인이 필요합니다.</div>';
+    const authMessage = loginState === 'failed' ? '<div class="login-auth-error"><span class="status-light is-waiting"></span><strong>로그인 실패</strong><small>아이디·비밀번호 또는 공식 로그인 상태를 확인해 주세요.</small></div>' : loginState === 'pending' ? '<div class="login-auth-pending"><span class="status-light is-waiting"></span><strong>로그인 확인 중</strong><small>공식 로그인 창에서 인증을 완료해 주세요.</small></div>' : '';
     const externalLogin = item.loginUrl ? `<a class="button login-external-button" href="${escapeHtml(item.loginUrl)}" target="_blank" rel="noreferrer">공식 로그인 창 열기 ↗</a>` : '';
-    return `<article class="login-page login-${item.key}" id="login-${item.key}"><div class="login-page-head"><span class="login-brand login-brand-${item.accent}">${item.code}</span><div><span class="eyebrow">${item.service}</span><h3>${item.label} 로그인</h3></div><span class="login-page-index">${String(index + 1).padStart(2, '0')}</span></div><div class="login-copy"><strong>${item.title}</strong><p>${item.description}</p><span class="login-scopes">${item.scopes}</span></div>${prerequisiteNotice}<div class="login-connected"><div class="login-connected-label"><span>연결 상태</span><b>${linked.length ? `${linked.length}개 연결됨` : '연결 대기'}</b></div>${accounts}</div><div class="login-actions"><button class="button login-button login-button-${item.accent}${prerequisite && !prerequisiteReady ? ' is-blocked' : ''}" data-login-provider="${item.key}" type="button">${prerequisite && !prerequisiteReady ? `${prerequisite.label} 로그인 필요` : linked.length ? '다른 계정 연결' : `${item.label} 로그인 시작`} <span>→</span></button>${externalLogin}</div><div class="login-page-footer"><span>OAuth callback seam</span><span>${linked.length ? 'SANDBOX CONNECTED' : prerequisite && !prerequisiteReady ? 'FACEBOOK AUTH REQUIRED' : 'READY TO CONNECT'}</span></div></article>`;
+    return `<article class="login-page login-${item.key}" id="login-${item.key}"><div class="login-page-head"><span class="login-brand login-brand-${item.accent}">${item.code}</span><div><span class="eyebrow">${item.service}</span><h3>${item.label} 로그인</h3></div><span class="login-page-index">${String(index + 1).padStart(2, '0')}</span></div><div class="login-copy"><strong>${item.title}</strong><p>${item.description}</p><span class="login-scopes">${item.scopes}</span></div>${prerequisiteNotice}${authMessage}<div class="login-connected"><div class="login-connected-label"><span>연결 상태</span><b>${linked.length ? `${linked.length}개 연결됨` : '연결 대기'}</b></div>${accounts}</div><div class="login-actions"><button class="button login-button login-button-${item.accent}${prerequisite && !prerequisiteReady ? ' is-blocked' : ''}" data-login-provider="${item.key}" type="button">${prerequisite && !prerequisiteReady ? `${prerequisite.label} 로그인 필요` : linked.length ? '다른 계정 연결' : `${item.label} 로그인 확인`} <span>→</span></button>${externalLogin}</div><div class="login-page-footer"><span>OAuth callback seam</span><span>${linked.length ? 'OAUTH CONNECTED' : prerequisite && !prerequisiteReady ? 'FACEBOOK AUTH REQUIRED' : loginState === 'failed' ? 'LOGIN FAILED' : 'LOGIN VERIFICATION REQUIRED'}</span></div></article>`;
   }).join('');
 }
 
@@ -350,9 +356,9 @@ function renderComments() {
 
 function renderLogs() { $('#logsList').innerHTML = state.logs.length ? state.logs.slice(0, 40).map((log) => `<div class="log-row"><time>${formatDate(log.createdAt, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><b>${escapeHtml(log.event)}</b><span>${escapeHtml(log.message)}</span></div>`).join('') : '<div class="empty-inline">아직 기록된 작업이 없습니다.</div>'; }
 function renderSettings() { for (const key of ['launchAtStartup', 'startMinimized', 'autoUpdate']) $(`#${key}`).checked = Boolean(state.settings[key]); }
-function naverClipRoutedVideos() { const slots = [...new Set(state.accounts.filter((account) => account.provider === 'naver').flatMap((account) => account.slotNumbers || []))].sort((a, b) => a - b); return slots.map((slot) => videoForSlot(slot)).filter(Boolean); }
+function naverClipRoutedVideos() { const slots = [...new Set(state.accounts.filter((account) => account.provider === 'naver' && isAuthenticatedAccount(account)).flatMap((account) => account.slotNumbers || []))].sort((a, b) => a - b); return slots.map((slot) => videoForSlot(slot)).filter(Boolean); }
 function hasNaverClipRoute() { return naverClipRoutedVideos().length > 0; }
-function instagramRoutedVideos() { const slots = [...new Set(state.accounts.filter((account) => account.provider === 'instagram').flatMap((account) => account.slotNumbers || []))].sort((a, b) => a - b); return slots.map((slot) => videoForSlot(slot)).filter(Boolean); }
+function instagramRoutedVideos() { const slots = [...new Set(state.accounts.filter((account) => account.provider === 'instagram' && isAuthenticatedAccount(account)).flatMap((account) => account.slotNumbers || []))].sort((a, b) => a - b); return slots.map((slot) => videoForSlot(slot)).filter(Boolean); }
 function hasInstagramRoute() { return instagramRoutedVideos().length > 0; }
 function applyNaverClipMetadata(clip, force = false) {
   if (!clip) return;
@@ -460,9 +466,9 @@ async function generateAi() { const video = videoForSlot(state.selectedSlot); if
 async function generateNaverClipForVideo(video) { const result = await api('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: video.id, provider: 'naver' }) }); Object.assign(video, result.video); return result.metadata; }
 async function generateInstagramForVideo(video) { const result = await api('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: video.id, provider: 'instagram' }) }); Object.assign(video, result.video); return result.metadata; }
 async function generateNaverClip() { const video = videoForSlot(state.selectedSlot) || naverClipRoutedVideos()[0]; if (!video) return showToast('먼저 프로그램에 영상을 저장해 주세요.', true); if (!hasNaverClipRoute()) return showToast('먼저 네이버 클립 계정에 저장 슬롯을 연결해 주세요.', true); try { const metadata = await generateNaverClipForVideo(video); state.naverClipAutoSlots.delete(video.id); fillMetadata(video); applyNaverClipMetadata(metadata.naverClip, true); renderAll(); showToast('네이버 클립 문구와 카테고리를 자동 선택했습니다.'); } catch (error) { showToast(error.message, true); } }
-async function registerNaverClip() { const accounts = state.accounts.filter((item) => item.provider === 'naver' && item.status === 'connected' && (item.slotNumbers || []).some((slot) => videoForSlot(slot))); if (!accounts.length) return showToast('프로그램에 저장된 영상과 연결된 네이버 클립 계정이 없습니다.', true); const clip = readNaverClipForm(); if (!clip || clip.description.length < 10 || !clip.primaryCategory || !clip.secondaryCategory) return showToast('클립 설명을 10자 이상 입력하고 카테고리를 선택해 주세요.', true); for (const account of accounts) await uploadAccountVideos(account.id, clip, '등록'); }
+async function registerNaverClip() { const accounts = state.accounts.filter((item) => item.provider === 'naver' && isAuthenticatedAccount(item) && (item.slotNumbers || []).some((slot) => videoForSlot(slot))); if (!accounts.length) return showToast('프로그램에 저장된 영상과 연결된 네이버 클립 계정이 없습니다.', true); const clip = readNaverClipForm(); if (!clip || clip.description.length < 10 || !clip.primaryCategory || !clip.secondaryCategory) return showToast('클립 설명을 10자 이상 입력하고 카테고리를 선택해 주세요.', true); for (const account of accounts) await uploadAccountVideos(account.id, clip, '등록'); }
 async function generateInstagram() { const video = videoForSlot(state.selectedSlot) || instagramRoutedVideos()[0]; if (!video) return showToast('먼저 프로그램에 영상을 저장해 주세요.', true); if (!hasInstagramRoute()) return showToast('먼저 Instagram 계정에 저장 슬롯을 연결해 주세요.', true); try { const metadata = await generateInstagramForVideo(video); state.instagramAutoSlots.delete(video.id); fillMetadata(video); applyInstagramMetadata(metadata.instagram, true); renderAll(); showToast('Instagram 릴스 문구와 게시 옵션을 준비했습니다.'); } catch (error) { showToast(error.message, true); } }
-async function publishInstagram() { const accounts = state.accounts.filter((item) => item.provider === 'instagram' && item.status === 'connected' && (item.slotNumbers || []).some((slot) => videoForSlot(slot))); if (!accounts.length) return showToast('프로그램에 저장된 영상과 연결된 Instagram 계정이 없습니다.', true); const metadata = readInstagramForm(); if (!metadata?.caption) return showToast('릴스 캡션을 준비해 주세요.', true); for (const account of accounts) await uploadAccountVideos(account.id, metadata, '게시'); }
+async function publishInstagram() { const accounts = state.accounts.filter((item) => item.provider === 'instagram' && isAuthenticatedAccount(item) && (item.slotNumbers || []).some((slot) => videoForSlot(slot))); if (!accounts.length) return showToast('프로그램에 저장된 영상과 연결된 Instagram 계정이 없습니다.', true); const metadata = readInstagramForm(); if (!metadata?.caption) return showToast('릴스 캡션을 준비해 주세요.', true); for (const account of accounts) await uploadAccountVideos(account.id, metadata, '게시'); }
 
 function validateFile(file) { const extension = file.name.split('.').pop().toLowerCase(); if (!allowedExtensions.has(extension)) return 'MP4, MOV, WebM, MKV 파일만 올릴 수 있습니다.'; if (file.size > maxFileSize) return '파일 크기는 2 GB 이하여야 합니다.'; if (!file.size) return '빈 파일은 업로드할 수 없습니다.'; return null; }
 function firstFreeSlot() { return Array.from({ length: 10 }, (_, index) => index + 1).find((slot) => !videoForSlot(slot)); }
@@ -516,7 +522,7 @@ async function toggleRoute(input) { const account = state.accounts.find((item) =
 
 async function saveAccount(event) { event.preventDefault(); try { const result = await api('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: $('#accountProvider').value, displayName: $('#accountDisplayName').value, handle: $('#accountHandle').value }) }); state.accounts.unshift(result.account); const quickProvider = state.pendingQuickProvider; state.pendingQuickProvider = ''; if (quickProvider === result.account.provider && videoForSlot(state.selectedSlot)) { state.quickProviders.add(quickProvider); result.account.slotNumbers = [state.selectedSlot]; try { const routed = await api(`/api/accounts/${encodeURIComponent(result.account.id)}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: result.account.slotNumbers }) }); Object.assign(result.account, routed.account); } catch {} } closeAccountModal(); renderAll(); document.querySelector(`#login-${result.account.provider}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); showToast(`${providerFor(result.account.provider).label} 계정을 연결했습니다.`); } catch (error) { showToast(error.message, true); } }
 async function removeAccount(id) { const account = state.accounts.find((item) => item.id === id); if (!account || !window.confirm(`${account.handle} 연결을 해제할까요?`)) return; try { await api(`/api/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' }); state.accounts = state.accounts.filter((item) => item.id !== id); renderAll(); showToast('계정 연결을 해제했습니다.'); } catch (error) { showToast(error.message, true); } }
-function openAccountModal(providerKey = 'instagram') { const provider = providerFor(providerKey); $('#accountProvider').value = providerKey; $('#accountModalEyebrow').textContent = `${provider.code} / OAUTH LOGIN`; $('#accountModalTitle').textContent = `${provider.label} 로그인`; $('#accountModalDescription').textContent = `${provider.label} OAuth 연결을 시작합니다. sandbox에서는 계정 식별자만 저장하며 비밀번호는 저장하지 않습니다.`; $('#accountModal').hidden = false; $('#accountDisplayName').value = ''; $('#accountHandle').value = ''; $('#accountDisplayName').focus(); }
+function openAccountModal(providerKey = 'instagram') { const provider = providerFor(providerKey); $('#accountProvider').value = providerKey; $('#accountModalEyebrow').textContent = `${provider.code} / OAUTH LOGIN`; $('#accountModalTitle').textContent = `${provider.label} 로그인 확인`; $('#accountModalDescription').textContent = '공식 로그인 창에서 인증이 성공해야 CONNECTED로 표시됩니다. 실패하거나 취소하면 빨간 상태로 남습니다.'; $('#accountModal').hidden = false; $('#accountDisplayName').value = ''; $('#accountHandle').value = ''; $('#accountPassword').value = ''; $('#accountDisplayName').focus(); }
 function closeAccountModal() { $('#accountModal').hidden = true; }
 
 async function fillRememberedCredentials(providerKey) {
@@ -539,7 +545,7 @@ async function fillRememberedCredentials(providerKey) {
 const openAccountModalBase = openAccountModal;
 openAccountModal = async function openAccountModalWithMemory(providerKey = 'instagram') {
   openAccountModalBase(providerKey);
-  $('#accountModalDescription').textContent = `${providerFor(providerKey).label} OAuth 연결을 시작합니다. 비밀번호는 서버에 저장하지 않고 이 PC의 암호화 저장소에만 기억합니다.`;
+  $('#accountModalDescription').textContent = `${providerFor(providerKey).label} 공식 로그인 창에서 인증을 완료해야 연결됩니다. 비밀번호는 서버에 보내지 않고 이 PC의 암호화 저장소에만 기억합니다.`;
   $('#rememberAccount').checked = true;
   await fillRememberedCredentials(providerKey);
 };
@@ -551,12 +557,22 @@ async function saveAccountWithCredentials(event) {
   const handle = $('#accountHandle').value.trim();
   const password = $('#accountPassword').value;
   const remember = $('#rememberAccount').checked;
+  state.loginStates[provider] = 'pending';
+  renderLoginPages();
   try {
-    const result = await api('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, displayName, handle }) });
+    if (!window.desktopWindow?.verifyLogin) throw new Error('EXE 프로그램에서 공식 로그인 확인을 실행해 주세요.');
+    const auth = await window.desktopWindow.verifyLogin(provider);
+    if (!auth?.verified) {
+      state.loginStates[provider] = 'failed';
+      renderLoginPages();
+      return showToast(`${providerFor(provider).label} 로그인에 실패했거나 취소되었습니다.`, true);
+    }
+    const result = await api('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, displayName, handle, authVerified: true }) });
     if (window.desktopWindow?.saveCredentials) {
       try { await window.desktopWindow.saveCredentials({ provider, displayName, handle, password, remember }); } catch {}
     }
-    state.accounts.unshift(result.account);
+    state.accounts = [result.account, ...state.accounts.filter((item) => item.id !== result.account.id)];
+    state.loginStates[provider] = 'connected';
     state.pendingQuickProvider = '';
     const selectedVideo = videoForSlot(state.selectedSlot);
     let uploadReady = false;
@@ -574,7 +590,7 @@ async function saveAccountWithCredentials(event) {
     renderAll();
     document.querySelector('#slots')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     showToast(`${providerFor(result.account.provider).label} 로그인 완료 · ${uploadReady ? '업로드 준비 완료' : '영상을 추가하면 업로드 준비'}${remember ? ' · 로그인 정보 기억됨' : ''}`);
-  } catch (error) { showToast(error.message, true); }
+  } catch (error) { state.loginStates[provider] = 'failed'; renderAll(); showToast(error.message, true); }
 }
 
 async function createCampaign(event) { event.preventDefault(); const routes = selectedRoutes(); if (!routes.length) return showToast('먼저 올릴 SNS를 클릭해 활성화하고 영상 번호를 선택해 주세요.', true); const schedule = $('#scheduleDate').value; if (!schedule) return showToast('예약 시각을 선택해 주세요.', true); try { const hashtags = $('#campaignHashtags').value.split(/\s+/).map((value) => value.trim()).filter(Boolean); const result = await api('/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: $('#campaignTitle').value, description: $('#campaignDescription').value, hashtags, scheduledAt: schedule, privacy: $('#privacySelect').value, routes }) }); state.campaigns.unshift(result.campaign); $('#campaignForm').reset(); const next = new Date(Date.now() + 3600000); next.setSeconds(0, 0); $('#scheduleDate').value = localInputValue(next); renderAll(); showToast(`${result.campaign.jobs.length}개 번호 경로를 예약했습니다.`); if (result.skippedRoutes?.length) showToast(`${result.skippedRoutes.length}개 중복 경로는 건너뛰었습니다.`, true); } catch (error) { showToast(error.message, true); } }

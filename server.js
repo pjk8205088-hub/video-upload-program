@@ -87,6 +87,38 @@ async function readCollection(store, kind) {
   return Array.isArray(value) ? value : [];
 }
 
+function normalizedHandle(value) {
+  return String(value || '').trim().replace(/^@+/, '').toLowerCase();
+}
+
+async function readAccounts(store) {
+  const accounts = await readCollection(store, 'accounts');
+  const seen = new Map();
+  const normalized = [];
+  let changed = false;
+  for (const account of accounts) {
+    const key = `${account.provider}:${normalizedHandle(account.handle)}`;
+    if (seen.has(key)) {
+      const existing = seen.get(key);
+      existing.slotNumbers = [...new Set([...(existing.slotNumbers || []), ...(account.slotNumbers || [])])].sort((a, b) => a - b);
+      if (account.status === 'connected' && account.authVerified === true) Object.assign(existing, { ...account, id: existing.id, slotNumbers: existing.slotNumbers });
+      changed = true;
+      continue;
+    }
+    const next = { ...account };
+    if (next.status === 'connected' && next.authVerified !== true) {
+      next.status = 'login_required';
+      next.authVerified = false;
+      next.mode = 'oauth_pending';
+      changed = true;
+    }
+    seen.set(key, next);
+    normalized.push(next);
+  }
+  if (changed) await writeCollection(store, 'accounts', normalized);
+  return normalized;
+}
+
 async function writeCollection(store, kind, value) {
   await ensureStorage(store);
   await writeJson(store.files[kind], value);
@@ -281,9 +313,23 @@ async function createAccount(store, req, res) {
   const handle = cleanText(body.handle, '', 160);
   if (!PROVIDER_KEYS.has(provider)) return sendError(res, 400, '지원하지 않는 SNS입니다.', 'UNSUPPORTED_PROVIDER');
   if (!displayName || !handle) return sendError(res, 400, '계정 이름과 아이디를 입력해 주세요.', 'ACCOUNT_FIELDS_REQUIRED');
-  const accounts = await readCollection(store, 'accounts');
-  if (provider === 'tiktok' && !accounts.some((account) => account.provider === 'facebook' && account.status === 'connected')) return sendError(res, 400, 'TikTok은 Facebook 로그인 후 연결할 수 있습니다.', 'FACEBOOK_LOGIN_REQUIRED');
-  const account = { id: createId('acct_'), provider, displayName, handle, status: 'connected', mode: 'sandbox', slotNumbers: [], connectedAt: new Date().toISOString() };
+  const accounts = await readAccounts(store);
+  if (provider === 'tiktok' && !accounts.some((account) => account.provider === 'facebook' && account.status === 'connected' && account.authVerified === true)) return sendError(res, 400, 'TikTok은 Facebook 로그인 후 연결할 수 있습니다.', 'FACEBOOK_LOGIN_REQUIRED');
+  if (body.authVerified !== true) return sendError(res, 401, '공식 로그인에 성공한 뒤 계정을 연결해 주세요.', 'ACCOUNT_AUTH_REQUIRED');
+  const existing = accounts.find((account) => account.provider === provider && normalizedHandle(account.handle) === normalizedHandle(handle));
+  if (existing) {
+    existing.displayName = displayName;
+    existing.handle = handle;
+    existing.status = 'connected';
+    existing.authVerified = true;
+    existing.mode = 'oauth';
+    existing.connectedAt = new Date().toISOString();
+    existing.updatedAt = existing.connectedAt;
+    await writeCollection(store, 'accounts', accounts);
+    await appendLog(store, 'account.reconnected', `${displayName} 계정 로그인 확인`, { provider, accountId: existing.id });
+    return sendJson(res, 200, { account: existing, existing: true });
+  }
+  const account = { id: createId('acct_'), provider, displayName, handle, status: 'connected', authVerified: true, mode: 'oauth', slotNumbers: [], connectedAt: new Date().toISOString() };
   accounts.unshift(account);
   await writeCollection(store, 'accounts', accounts);
   await appendLog(store, 'account.connected', `${displayName} 계정 연결`, { provider, accountId: account.id });
@@ -293,7 +339,7 @@ async function createAccount(store, req, res) {
 async function updateAccountRouting(store, req, res, id) {
   const body = await readRequestBody(req);
   const slotNumbers = [...new Set((Array.isArray(body.slotNumbers) ? body.slotNumbers : []).map(validSlot).filter(Boolean))].sort((a, b) => a - b);
-  const accounts = await readCollection(store, 'accounts');
+  const accounts = await readAccounts(store);
   const account = accounts.find((item) => item.id === id);
   if (!account) return sendError(res, 404, '연결된 계정을 찾을 수 없습니다.', 'ACCOUNT_NOT_FOUND');
   account.slotNumbers = slotNumbers;
@@ -304,7 +350,7 @@ async function updateAccountRouting(store, req, res, id) {
 }
 
 async function deleteAccount(store, res, id) {
-  const accounts = await readCollection(store, 'accounts');
+  const accounts = await readAccounts(store);
   const account = accounts.find((item) => item.id === id);
   if (!account) return sendError(res, 404, '연결된 계정을 찾을 수 없습니다.', 'ACCOUNT_NOT_FOUND');
   await writeCollection(store, 'accounts', accounts.filter((item) => item.id !== id));
@@ -327,7 +373,7 @@ function buildRoutes(body, accounts, videos) {
     const account = accounts.find((candidate) => candidate.id === item.accountId);
     const slotNumber = validSlot(item.slotNumber);
     const video = slotNumber ? videos.find((candidate) => candidate.slotNumber === slotNumber) : null;
-    if (!account || !slotNumber || !video) { invalid.push({ accountId: item.accountId, slotNumber: item.slotNumber }); continue; }
+    if (!account || account.status !== 'connected' || account.authVerified !== true || !slotNumber || !video) { invalid.push({ accountId: item.accountId, slotNumber: item.slotNumber, reason: account?.status !== 'connected' ? 'ACCOUNT_NOT_AUTHENTICATED' : undefined }); continue; }
     if (!routes.some((route) => route.accountId === account.id && route.slotNumber === slotNumber)) routes.push({ accountId: account.id, slotNumber, videoId: video.id, provider: account.provider, handle: account.handle });
   }
   return { routes, invalid };
@@ -339,7 +385,7 @@ function existingRouteKeys(campaigns) {
 
 async function createCampaign(store, req, res) {
   const body = await readRequestBody(req);
-  const accounts = await readCollection(store, 'accounts');
+  const accounts = await readAccounts(store);
   const videos = await readCollection(store, 'videos');
   const campaigns = await readCollection(store, 'campaigns');
   const { routes, invalid } = buildRoutes(body, accounts, videos);
@@ -525,7 +571,7 @@ function createServer(options = {}) {
       if (req.method === 'POST' && pathname === '/api/videos') return handleUpload(store, req, res);
       const videoMatch = pathname.match(/^\/api\/videos\/([^/]+)$/);
       if (req.method === 'DELETE' && videoMatch) return handleDeleteVideo(store, res, videoMatch[1]);
-      if (req.method === 'GET' && pathname === '/api/accounts') return sendJson(res, 200, { accounts: await readCollection(store, 'accounts'), providers: PROVIDERS });
+      if (req.method === 'GET' && pathname === '/api/accounts') return sendJson(res, 200, { accounts: await readAccounts(store), providers: PROVIDERS });
       if (req.method === 'POST' && pathname === '/api/accounts') return createAccount(store, req, res);
       const accountRoutingMatch = pathname.match(/^\/api\/accounts\/([^/]+)\/routing$/);
       if (req.method === 'PUT' && accountRoutingMatch) return updateAccountRouting(store, req, res, accountRoutingMatch[1]);

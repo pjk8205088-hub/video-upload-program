@@ -9,6 +9,13 @@ let mainWindow;
 let localServer;
 let autoUpdater;
 
+const AUTH_CONFIG = {
+  instagram: { url: 'https://www.instagram.com/accounts/login/', cookieUrls: ['https://www.instagram.com'], cookieNames: ['sessionid', 'ds_user_id'] },
+  tiktok: { url: 'https://www.tiktok.com/login/phone-or-email/email', cookieUrls: ['https://www.tiktok.com'], cookieNames: ['sessionid', 'sid_tt', 'sessionid_ss', 'sid_guard'] },
+  naver: { url: 'https://nid.naver.com/nidlogin.login', cookieUrls: ['https://www.naver.com', 'https://nid.naver.com'], cookieNames: ['NID_AUT', 'NID_SES'] },
+  facebook: { url: 'https://www.facebook.com/?locale=ko_KR', cookieUrls: ['https://www.facebook.com'], cookieNames: ['c_user', 'xs'] }
+};
+
 app.setName('Upload Desk');
 if (process.platform === 'win32') app.setAppUserModelId('com.uploaddesk.desktop.v3');
 app.setPath('userData', path.join(app.getPath('appData'), 'upload-desk-v3'));
@@ -20,6 +27,42 @@ function readSettings() { try { return JSON.parse(fs.readFileSync(settingsFile()
 function credentialsFile() { return path.join(app.getPath('userData'), 'secure', 'login-credentials.json'); }
 function readCredentialVault() { try { return JSON.parse(fs.readFileSync(credentialsFile(), 'utf8')); } catch { return { version: 1, providers: {} }; } }
 function writeCredentialVault(vault) { fs.mkdirSync(path.dirname(credentialsFile()), { recursive: true }); fs.writeFileSync(credentialsFile(), JSON.stringify(vault, null, 2), 'utf8'); }
+
+async function hasProviderAuthCookie(authWindow, provider) {
+  const config = AUTH_CONFIG[provider];
+  if (!config || authWindow.isDestroyed()) return false;
+  for (const url of config.cookieUrls) {
+    try {
+      const cookies = await authWindow.webContents.session.cookies.get({ url });
+      if (cookies.some((cookie) => config.cookieNames.includes(cookie.name) && String(cookie.value || '').length > 0)) return true;
+    } catch {}
+  }
+  return false;
+}
+
+function verifyProviderLogin(provider) {
+  const config = AUTH_CONFIG[provider];
+  if (!config || !mainWindow) return Promise.resolve({ verified: false, reason: 'unsupported' });
+  return new Promise((resolve) => {
+    const authWindow = new BrowserWindow({ parent: mainWindow, width: 520, height: 820, minWidth: 420, minHeight: 640, title: `${provider} 공식 로그인`, autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: 'persist:upload-desk-auth' } });
+    let finished = false;
+    const finish = (result) => {
+      if (finished) return;
+      finished = true;
+      if (!authWindow.isDestroyed()) authWindow.close();
+      resolve(result);
+    };
+    const check = async () => {
+      if (finished || authWindow.isDestroyed()) return;
+      if (await hasProviderAuthCookie(authWindow, provider)) finish({ verified: true, provider });
+    };
+    authWindow.webContents.on('did-finish-load', check);
+    authWindow.webContents.on('did-navigate', check);
+    authWindow.webContents.on('did-navigate-in-page', check);
+    authWindow.on('closed', () => finish({ verified: false, cancelled: true, provider }));
+    authWindow.loadURL(config.url).catch(() => finish({ verified: false, provider, reason: 'load_failed' }));
+  });
+}
 
 function reportStartupError(error) {
   const message = error?.stack || String(error);
@@ -39,6 +82,7 @@ function registerIpc() {
     if (!app.isPackaged || !autoUpdater) return { status: 'browser-sandbox' };
     try { await autoUpdater.checkForUpdatesAndNotify(); return { status: 'checked' }; } catch (error) { return { status: 'error', message: error.message }; }
   });
+  ipcMain.handle('auth:verify-login', (_event, provider) => verifyProviderLogin(String(provider || '').trim().toLowerCase()));
   ipcMain.handle('speech:speak', (_event, text) => {
     if (process.platform !== 'win32' || !String(text || '').trim()) return { supported: false };
     const script = "$ErrorActionPreference='SilentlyContinue'; Add-Type -AssemblyName System.Speech; $synth=New-Object System.Speech.Synthesis.SpeechSynthesizer; $voices=$synth.GetInstalledVoices(); $female=$voices | Where-Object { $_.VoiceInfo.Gender.ToString() -eq 'Female' -and $_.VoiceInfo.Culture.Name -match '^ko' } | Select-Object -First 1; if (!$female) { $female=$voices | Where-Object { $_.VoiceInfo.Gender.ToString() -eq 'Female' } | Select-Object -First 1 }; if ($female) { $synth.SelectVoice($female.VoiceInfo.Name) }; $synth.Rate=0; $synth.Volume=100; $synth.Speak([Console]::In.ReadToEnd()); $synth.Dispose();";

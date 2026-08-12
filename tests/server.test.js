@@ -31,7 +31,7 @@ test('Naver Clip metadata gets a format-safe description and category recommenda
 
 test('Naver Clip registration keeps publish options on the job', async () => withServer(async (base) => {
   const video = await upload(base, 1, '상품 정보.mp4');
-  const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'naver', displayName: '네이버 클립', handle: 'shopping-channel' }) });
+  const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'naver', displayName: '네이버 클립', handle: 'shopping-channel', authVerified: true }) });
   await json(base, `/api/accounts/${account.payload.account.id}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: [1] }) });
   const campaign = await json(base, '/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: '쇼핑 클립', scheduledAt: new Date().toISOString(), routes: [{ accountId: account.payload.account.id, slotNumber: 1 }], naverClip: { description: '상품 정보를 자세히 소개합니다.', primaryCategory: '쇼핑', secondaryCategory: '상품 정보', publicEnabled: false, scheduleRegistration: true, schedulePrivate: true, country: 'kr', commentsAllowed: 'deny' } }) });
   assert.equal(campaign.response.status, 201);
@@ -42,7 +42,7 @@ test('Naver Clip registration keeps publish options on the job', async () => wit
 
 test('Instagram Reels metadata persists on the job', async () => withServer(async (base) => {
   const video = await upload(base, 1, 'reels-video.mp4');
-  const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'instagram', displayName: 'Instagram Reels', handle: '@reels' }) });
+  const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'instagram', displayName: 'Instagram Reels', handle: '@reels', authVerified: true }) });
   await json(base, `/api/accounts/${account.payload.account.id}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: [1] }) });
   const campaign = await json(base, '/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: '릴스 게시', scheduledAt: new Date().toISOString(), routes: [{ accountId: account.payload.account.id, slotNumber: video.payload.video.slotNumber }], instagram: { caption: '새 릴스 캡션입니다.', hashtags: ['#릴스'], shareToFeed: false, allowComments: false } }) });
   assert.equal(campaign.response.status, 201);
@@ -53,14 +53,28 @@ test('Instagram Reels metadata persists on the job', async () => withServer(asyn
 }));
 
 test('TikTok account connection requires a connected Facebook account', async () => withServer(async (base) => {
-  const blocked = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'tiktok', displayName: 'TikTok 채널', handle: '@tiktok' }) });
+  const unauthenticated = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'facebook', displayName: 'Facebook 페이지', handle: '@unauthenticated' }) });
+  assert.equal(unauthenticated.response.status, 401);
+  assert.equal(unauthenticated.payload.error.code, 'ACCOUNT_AUTH_REQUIRED');
+  const blocked = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'tiktok', displayName: 'TikTok 채널', handle: '@tiktok', authVerified: true }) });
   assert.equal(blocked.response.status, 400);
   assert.equal(blocked.payload.error.code, 'FACEBOOK_LOGIN_REQUIRED');
 
-  const facebook = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'facebook', displayName: 'Facebook 페이지', handle: '@facebook' }) });
+  const facebook = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'facebook', displayName: 'Facebook 페이지', handle: '@facebook', authVerified: true }) });
   assert.equal(facebook.response.status, 201);
-  const allowed = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'tiktok', displayName: 'TikTok 채널', handle: '@tiktok' }) });
+  const allowed = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'tiktok', displayName: 'TikTok 채널', handle: '@tiktok', authVerified: true }) });
   assert.equal(allowed.response.status, 201);
+}));
+
+test('verified accounts cannot be duplicated by the same provider and handle', async () => withServer(async (base) => {
+  const first = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'naver', displayName: '네이버 클립', handle: 'pjk820508', authVerified: true }) });
+  const second = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'naver', displayName: '다른 표시 이름', handle: '@PJK820508', authVerified: true }) });
+  assert.equal(first.response.status, 201);
+  assert.equal(second.response.status, 200);
+  assert.equal(second.payload.existing, true);
+  assert.equal(second.payload.account.id, first.payload.account.id);
+  const accounts = await json(base, '/api/accounts');
+  assert.equal(accounts.payload.accounts.filter((account) => account.provider === 'naver').length, 1);
 }));
 
 async function withServer(callback) {
@@ -94,7 +108,7 @@ test('slot routing, duplicate protection, sandbox publish, analytics and comment
   assert.equal(ai.payload.metadata.naverClip.primaryCategory, '라이프 이벤트');
   assert.ok(ai.payload.metadata.naverClip.description.length <= 300);
 
-  const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'instagram', displayName: 'Sandbox 채널', handle: '@sandbox' }) });
+  const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'instagram', displayName: 'Sandbox 채널', handle: '@sandbox', authVerified: true }) });
   assert.equal(account.response.status, 201);
   const routing = await json(base, `/api/accounts/${account.payload.account.id}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: [1, 3, 11] }) });
   assert.deepEqual(routing.payload.account.slotNumbers, [1, 3]);
@@ -126,9 +140,9 @@ test('failed sandbox jobs schedule exponential retry and manual retry can recove
     process.env.UPLOAD_DESK_MOCK_FAILURES = 'tiktok';
   try {
     const video = await upload(base, 2, 'retry-video.mp4');
-    const facebook = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'facebook', displayName: 'Retry Facebook', handle: '@retry-facebook' }) });
+    const facebook = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'facebook', displayName: 'Retry Facebook', handle: '@retry-facebook', authVerified: true }) });
     assert.equal(facebook.response.status, 201);
-    const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'tiktok', displayName: 'Retry 채널', handle: '@retry' }) });
+    const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'tiktok', displayName: 'Retry 채널', handle: '@retry', authVerified: true }) });
     const campaign = await json(base, '/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: '재시도 테스트', scheduledAt: new Date(Date.now() - 1000).toISOString(), routes: [{ accountId: account.payload.account.id, slotNumber: video.payload.video.slotNumber }] }) });
     const run = await json(base, `/api/campaigns/${campaign.payload.campaign.id}/run`, { method: 'POST' });
     const retryingJob = run.payload.campaign.jobs[0];
