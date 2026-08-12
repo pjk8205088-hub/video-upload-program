@@ -319,9 +319,10 @@ function renderLoginPages() {
     const prerequisiteReady = hasLoginPrerequisite(item.key);
     const prerequisiteNotice = prerequisite ? `<div class="login-prerequisite${prerequisiteReady ? ' is-ready' : ' is-blocked'}"><span class="login-prerequisite-light"></span><span>${prerequisite.label} 로그인 ${prerequisiteReady ? '완료' : '필요'}</span>${prerequisiteReady ? '' : `<a href="#login-${item.requiresProvider}" data-scroll-target="#login-${item.requiresProvider}">${prerequisite.label} 로그인으로 이동</a>`}</div>` : '';
     const accounts = linked.length ? linked.map((account) => `<div class="login-account"><span class="login-account-dot"></span><div><strong>${escapeHtml(account.displayName)}</strong><small>${escapeHtml(account.handle)}</small></div><span class="login-account-state">CONNECTED</span></div>`).join('') : '<div class="login-empty">공식 로그인 확인이 필요합니다.</div>';
+    const forceLogoutButton = `<button class="button force-logout-button" data-force-logout-provider="${item.key}" type="button">강제 로그아웃</button>`;
     const authMessage = loginState === 'failed' ? '<div class="login-auth-error"><span class="status-light is-waiting"></span><strong>로그인 실패</strong><small>아이디·비밀번호 또는 공식 로그인 상태를 확인해 주세요.</small></div>' : loginState === 'pending' ? '<div class="login-auth-pending"><span class="status-light is-waiting"></span><strong>로그인 확인 중</strong><small>공식 로그인 창에서 인증을 완료해 주세요.</small></div>' : '';
     const externalLogin = item.loginUrl ? `<a class="button login-external-button" href="${escapeHtml(item.loginUrl)}" target="_blank" rel="noreferrer">공식 로그인 창 열기 ↗</a>` : '';
-    return `<article class="login-page login-${item.key}" id="login-${item.key}"><div class="login-page-head"><span class="login-brand login-brand-${item.accent}">${item.code}</span><div><span class="eyebrow">${item.service}</span><h3>${item.label} 로그인</h3></div><span class="login-page-index">${String(index + 1).padStart(2, '0')}</span></div><div class="login-copy"><strong>${item.title}</strong><p>${item.description}</p><span class="login-scopes">${item.scopes}</span></div>${prerequisiteNotice}${authMessage}<div class="login-connected"><div class="login-connected-label"><span>연결 상태</span><b>${linked.length ? `${linked.length}개 연결됨` : '연결 대기'}</b></div>${accounts}</div><div class="login-actions"><button class="button login-button login-button-${item.accent}${prerequisite && !prerequisiteReady ? ' is-blocked' : ''}" data-login-provider="${item.key}" type="button">${prerequisite && !prerequisiteReady ? `${prerequisite.label} 로그인 필요` : linked.length ? '다른 계정 연결' : `${item.label} 로그인 확인`} <span>→</span></button>${externalLogin}</div><div class="login-page-footer"><span>OAuth callback seam</span><span>${linked.length ? 'OAUTH CONNECTED' : prerequisite && !prerequisiteReady ? 'FACEBOOK AUTH REQUIRED' : loginState === 'failed' ? 'LOGIN FAILED' : 'LOGIN VERIFICATION REQUIRED'}</span></div></article>`;
+    return `<article class="login-page login-${item.key}" id="login-${item.key}"><div class="login-page-head"><span class="login-brand login-brand-${item.accent}">${item.code}</span><div><span class="eyebrow">${item.service}</span><h3>${item.label} 로그인</h3></div><span class="login-page-index">${String(index + 1).padStart(2, '0')}</span></div><div class="login-copy"><strong>${item.title}</strong><p>${item.description}</p><span class="login-scopes">${item.scopes}</span></div>${prerequisiteNotice}${authMessage}<div class="login-connected"><div class="login-connected-label"><span>연결 상태</span><b>${linked.length ? `${linked.length}개 연결됨` : '연결 대기'}</b></div>${accounts}${forceLogoutButton}</div><div class="login-actions"><button class="button login-button login-button-${item.accent}${prerequisite && !prerequisiteReady ? ' is-blocked' : ''}" data-login-provider="${item.key}" type="button">${prerequisite && !prerequisiteReady ? `${prerequisite.label} 로그인 필요` : linked.length ? '다른 계정 연결' : `${item.label} 로그인 확인`} <span>→</span></button>${externalLogin}</div><div class="login-page-footer"><span>OAuth callback seam</span><span>${linked.length ? 'OAUTH CONNECTED' : prerequisite && !prerequisiteReady ? 'FACEBOOK AUTH REQUIRED' : loginState === 'failed' ? 'LOGIN FAILED' : 'LOGIN VERIFICATION REQUIRED'}</span></div></article>`;
   }).join('');
 }
 
@@ -522,6 +523,21 @@ async function toggleRoute(input) { const account = state.accounts.find((item) =
 
 async function saveAccount(event) { event.preventDefault(); try { const result = await api('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: $('#accountProvider').value, displayName: $('#accountDisplayName').value, handle: $('#accountHandle').value }) }); state.accounts.unshift(result.account); const quickProvider = state.pendingQuickProvider; state.pendingQuickProvider = ''; if (quickProvider === result.account.provider && videoForSlot(state.selectedSlot)) { state.quickProviders.add(quickProvider); result.account.slotNumbers = [state.selectedSlot]; try { const routed = await api(`/api/accounts/${encodeURIComponent(result.account.id)}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: result.account.slotNumbers }) }); Object.assign(result.account, routed.account); } catch {} } closeAccountModal(); renderAll(); document.querySelector(`#login-${result.account.provider}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); showToast(`${providerFor(result.account.provider).label} 계정을 연결했습니다.`); } catch (error) { showToast(error.message, true); } }
 async function removeAccount(id) { const account = state.accounts.find((item) => item.id === id); if (!account || !window.confirm(`${account.handle} 연결을 해제할까요?`)) return; try { await api(`/api/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' }); state.accounts = state.accounts.filter((item) => item.id !== id); renderAll(); showToast('계정 연결을 해제했습니다.'); } catch (error) { showToast(error.message, true); } }
+async function forceLogoutProvider(providerKey) {
+  const provider = providerFor(providerKey);
+  if (!window.confirm(`${provider.label}에서 강제 로그아웃할까요? 연결 계정, 저장된 로그인 정보, 이 PC의 로그인 세션을 정리합니다.`)) return;
+  try {
+    const accounts = state.accounts.filter((account) => account.provider === providerKey);
+    await Promise.all(accounts.map((account) => api(`/api/accounts/${encodeURIComponent(account.id)}`, { method: 'DELETE' })));
+    await window.desktopWindow?.forceLogout?.(providerKey);
+    await window.desktopWindow?.clearSavedCredentials?.(providerKey);
+    state.accounts = state.accounts.filter((account) => account.provider !== providerKey);
+    state.quickProviders.delete(providerKey);
+    state.loginStates[providerKey] = 'idle';
+    renderAll();
+    showToast(`${provider.label} 강제 로그아웃이 완료되었습니다.`);
+  } catch (error) { showToast(error.message, true); }
+}
 function openAccountModal(providerKey = 'instagram') { const provider = providerFor(providerKey); $('#accountProvider').value = providerKey; $('#accountModalEyebrow').textContent = `${provider.code} / OAUTH LOGIN`; $('#accountModalTitle').textContent = `${provider.label} 로그인 확인`; $('#accountModalDescription').textContent = '공식 로그인 창에서 인증이 성공해야 CONNECTED로 표시됩니다. 실패하거나 취소하면 빨간 상태로 남습니다.'; $('#accountModal').hidden = false; $('#accountDisplayName').value = ''; $('#accountHandle').value = ''; $('#accountPassword').value = ''; $('#accountDisplayName').focus(); }
 function closeAccountModal() { $('#accountModal').hidden = true; }
 
@@ -617,6 +633,7 @@ document.addEventListener('click', (event) => {
   if (target.dataset.uploadAccount) { const account = state.accounts.find((item) => item.id === target.dataset.uploadAccount); uploadAccountVideos(target.dataset.uploadAccount, null, account?.provider === 'naver' ? '등록' : '업로드'); }
   if (target.id === 'registerNaverClipButton') registerNaverClip();
   if (target.id === 'publishInstagramButton') publishInstagram();
+  if (target.dataset.forceLogoutProvider) forceLogoutProvider(target.dataset.forceLogoutProvider);
   if (target.dataset.removeAccount) removeAccount(target.dataset.removeAccount);
   if (target.dataset.runCampaign) runCampaign(target.dataset.runCampaign);
   if (target.dataset.retryJob) retryJob(target.dataset.retryJob);

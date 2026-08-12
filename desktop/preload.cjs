@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   setStartup: (launchAtStartup, startMinimized) => ipcRenderer.invoke('settings:set-startup', launchAtStartup, startMinimized),
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   verifyLogin: (provider) => ipcRenderer.invoke('auth:verify-login', provider),
+  forceLogout: (provider) => ipcRenderer.invoke('auth:force-logout', provider),
   speak: (text) => ipcRenderer.invoke('speech:speak', text),
   getSavedCredentials: (provider) => ipcRenderer.invoke('credentials:get', provider),
   saveCredentials: (payload) => ipcRenderer.invoke('credentials:save', payload),

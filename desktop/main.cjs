@@ -1,7 +1,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
-const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, session } = require('electron');
 
 let createServer;
 let ensureStorage;
@@ -38,6 +38,24 @@ async function hasProviderAuthCookie(authWindow, provider) {
     } catch {}
   }
   return false;
+}
+
+async function clearProviderAuth(provider) {
+  const config = AUTH_CONFIG[provider];
+  if (!config) return { cleared: false, reason: 'unsupported' };
+  const authSession = session.fromPartition('persist:upload-desk-auth');
+  let removed = 0;
+  for (const url of config.cookieUrls) {
+    try {
+      const cookies = await authSession.cookies.get({ url });
+      for (const cookie of cookies.filter((item) => config.cookieNames.includes(item.name))) {
+        const domain = String(cookie.domain || new URL(url).hostname).replace(/^\./, '');
+        const cookieUrl = `${cookie.secure ? 'https' : 'http'}://${domain}${cookie.path || '/'}`;
+        try { await authSession.cookies.remove(cookieUrl, cookie.name); removed += 1; } catch {}
+      }
+    } catch {}
+  }
+  return { cleared: true, removed };
 }
 
 function verifyProviderLogin(provider) {
@@ -83,6 +101,7 @@ function registerIpc() {
     try { await autoUpdater.checkForUpdatesAndNotify(); return { status: 'checked' }; } catch (error) { return { status: 'error', message: error.message }; }
   });
   ipcMain.handle('auth:verify-login', (_event, provider) => verifyProviderLogin(String(provider || '').trim().toLowerCase()));
+  ipcMain.handle('auth:force-logout', (_event, provider) => clearProviderAuth(String(provider || '').trim().toLowerCase()));
   ipcMain.handle('speech:speak', (_event, text) => {
     if (process.platform !== 'win32' || !String(text || '').trim()) return { supported: false };
     const script = "$ErrorActionPreference='SilentlyContinue'; Add-Type -AssemblyName System.Speech; $synth=New-Object System.Speech.Synthesis.SpeechSynthesizer; $voices=$synth.GetInstalledVoices(); $female=$voices | Where-Object { $_.VoiceInfo.Gender.ToString() -eq 'Female' -and $_.VoiceInfo.Culture.Name -match '^ko' } | Select-Object -First 1; if (!$female) { $female=$voices | Where-Object { $_.VoiceInfo.Gender.ToString() -eq 'Female' } | Select-Object -First 1 }; if ($female) { $synth.SelectVoice($female.VoiceInfo.Name) }; $synth.Rate=0; $synth.Volume=100; $synth.Speak([Console]::In.ReadToEnd()); $synth.Dispose();";
