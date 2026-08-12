@@ -112,12 +112,47 @@ function drainUploadAnnouncements() {
   speakUploadAnnouncement(message, () => { state.isAnnouncingUpload = false; window.setTimeout(drainUploadAnnouncements, 220); });
 }
 
+function uploadAnnouncementFor(job) {
+  const slotLabel = `${job.slotNumber}번`;
+  const messages = {
+    tiktok: `틱톡 ${slotLabel} 동영상이 업로드되었습니다.`,
+    naver: `네이버 클립에 ${slotLabel} 동영상이 올라갔습니다.`,
+    instagram: `인스타그램에 ${slotLabel} 동영상이 업로드되었습니다.`,
+    facebook: `페이스북에 ${slotLabel} 동영상이 업로드되었습니다.`
+  };
+  return messages[job.provider] || `${providerFor(job.provider).label}에 ${slotLabel} 동영상이 업로드되었습니다.`;
+}
+
 function announcePublishedJobs(campaign) {
   (campaign?.jobs || []).filter((job) => job.status === 'published' && !state.announcedJobs.has(job.id)).forEach((job) => {
     state.announcedJobs.add(job.id);
-    state.uploadNoticeQueue.push(`${providerFor(job.provider).label}에 동영상 ${job.slotNumber}번이 업로드되었습니다.`);
+    state.uploadNoticeQueue.push(uploadAnnouncementFor(job));
   });
   drainUploadAnnouncements();
+}
+
+async function uploadAccountVideos(accountId) {
+  const account = state.accounts.find((item) => item.id === accountId);
+  if (!account) return;
+  const routedVideos = (account.slotNumbers || []).map((slotNumber) => ({ slotNumber, video: videoForSlot(slotNumber) })).filter(({ video }) => video);
+  if (account.status !== 'connected') return showToast('먼저 이 계정에 로그인해 주세요.', true);
+  if (!routedVideos.length) return showToast('이 계정에 업로드할 영상을 먼저 선택해 주세요.', true);
+  const provider = providerFor(account.provider);
+  const firstVideo = routedVideos[0].video;
+  const metadata = firstVideo.aiMetadata || {};
+  const routes = routedVideos.map(({ slotNumber }) => ({ accountId: account.id, slotNumber }));
+  try {
+    const created = await api('/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: metadata.title || `${provider.label} ${routedVideos[0].slotNumber}번 동영상`, description: metadata.description || `${provider.label}에 바로 업로드합니다.`, hashtags: metadata.hashtags || ['#동영상', '#콘텐츠'], scheduledAt: new Date().toISOString(), privacy: 'public', routes }) });
+    state.campaigns.unshift(created.campaign);
+    renderAll();
+    const result = await api(`/api/campaigns/${encodeURIComponent(created.campaign.id)}/run`, { method: 'POST' });
+    const index = state.campaigns.findIndex((campaign) => campaign.id === result.campaign.id);
+    if (index >= 0) state.campaigns[index] = result.campaign;
+    await loadInsights();
+    renderAll();
+    showToast(`${provider.label} ${routedVideos.length}개 동영상 업로드를 완료했습니다.`);
+    announcePublishedJobs(result.campaign);
+  } catch (error) { showToast(error.message, true); }
 }
 
 function renderSidebarStatus() {
@@ -247,7 +282,9 @@ function renderAccounts() {
     const routedVideos = (account.slotNumbers || []).map((slot) => ({ slot, video: videoForSlot(slot) })).filter(({ video }) => video).sort((a, b) => a.slot - b.slot);
     const videoPreviews = routedVideos.length ? `<div class="account-video-preview-list" aria-label="${provider.label} 연결 영상 미리보기">${routedVideos.map(({ slot, video }) => `<button class="account-video-preview" data-select-slot="${slot}" type="button" title="${slot}번 영상 ${escapeHtml(video.originalName)}"><img src="${escapeHtml(video.thumbnailUrl)}" alt="${slot}번 ${escapeHtml(video.originalName)} 썸네일"><span>${String(slot).padStart(2, '0')}</span></button>`).join('')}</div>` : '<div class="account-video-empty">선택된 영상 없음</div>';
     const switches = Array.from({ length: 10 }, (_, index) => { const slot = index + 1; const hasVideo = Boolean(videoForSlot(slot)); const checked = (account.slotNumbers || []).includes(slot); return `<label class="slot-switch${hasVideo ? '' : ' is-disabled'}" title="${hasVideo ? `${slot}번 영상을 ${provider.label}에 연결` : `${slot}번 슬롯이 비어 있습니다`}"><input type="checkbox" data-account-slot="${escapeHtml(account.id)}" data-slot-number="${slot}" ${checked ? 'checked' : ''} ${hasVideo ? '' : 'disabled'}><span>${slot}</span></label>`; }).join('');
-    return `<article class="account-card provider-${account.provider}"><div class="account-head"><span class="provider-code">${provider.code}</span><div><strong>${escapeHtml(account.displayName)}</strong><small>${provider.label} · ${escapeHtml(account.handle)}</small></div><span class="connected-dot">●</span></div><div class="account-route-label"><span>게시할 번호</span><b>${checkedCount}개</b></div>${videoPreviews}<div class="slot-switches">${switches}</div><div class="account-footer"><span>${account.mode === 'sandbox' ? 'SANDBOX ADAPTER' : 'OAUTH CONNECTED'}</span><button class="text-button" data-remove-account="${escapeHtml(account.id)}" type="button">연결 해제</button></div></article>`;
+    const canUpload = account.status === 'connected' && routedVideos.length > 0;
+    const uploadTitle = account.status !== 'connected' ? '먼저 이 계정에 로그인해 주세요' : routedVideos.length ? `${routedVideos.length}개 영상을 즉시 업로드` : '계정에 업로드할 영상을 먼저 선택해 주세요';
+    return `<article class="account-card provider-${account.provider}"><div class="account-head"><span class="provider-code">${provider.code}</span><div><strong>${escapeHtml(account.displayName)}</strong><small>${provider.label} · ${escapeHtml(account.handle)}</small></div><span class="connected-dot">●</span><button class="account-upload-button" data-upload-account="${escapeHtml(account.id)}" type="button" ${canUpload ? '' : 'disabled'} title="${uploadTitle}">동영상 올리기</button></div><div class="account-route-label"><span>게시할 번호</span><b>${checkedCount}개</b></div>${videoPreviews}<div class="slot-switches">${switches}</div><div class="account-footer"><span>${account.mode === 'sandbox' ? 'SANDBOX ADAPTER' : 'OAUTH CONNECTED'}</span><button class="text-button" data-remove-account="${escapeHtml(account.id)}" type="button">연결 해제</button></div></article>`;
   }).join('');
   renderRouteSummary();
 }
@@ -463,6 +500,7 @@ document.addEventListener('click', (event) => {
   if (target.dataset.quickSlotProvider && requireLoginPrerequisite(target.dataset.quickSlotProvider)) toggleQuickProviderSlot(target.dataset.quickSlotProvider, target.dataset.slotNumber);
   if (target.dataset.loginProvider && requireLoginPrerequisite(target.dataset.loginProvider)) openAccountModal(target.dataset.loginProvider);
   if (target.dataset.openAccount || target.id === 'openAccountButton') openAccountModal();
+  if (target.dataset.uploadAccount) uploadAccountVideos(target.dataset.uploadAccount);
   if (target.dataset.removeAccount) removeAccount(target.dataset.removeAccount);
   if (target.dataset.runCampaign) runCampaign(target.dataset.runCampaign);
   if (target.dataset.retryJob) retryJob(target.dataset.retryJob);
