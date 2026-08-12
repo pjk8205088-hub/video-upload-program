@@ -266,8 +266,9 @@ async function createAccount(store, req, res) {
   const handle = cleanText(body.handle, '', 160);
   if (!PROVIDER_KEYS.has(provider)) return sendError(res, 400, '지원하지 않는 SNS입니다.', 'UNSUPPORTED_PROVIDER');
   if (!displayName || !handle) return sendError(res, 400, '계정 이름과 아이디를 입력해 주세요.', 'ACCOUNT_FIELDS_REQUIRED');
-  const account = { id: createId('acct_'), provider, displayName, handle, status: 'connected', mode: 'sandbox', slotNumbers: [], connectedAt: new Date().toISOString() };
   const accounts = await readCollection(store, 'accounts');
+  if (provider === 'tiktok' && !accounts.some((account) => account.provider === 'facebook' && account.status === 'connected')) return sendError(res, 400, 'TikTok은 Facebook 로그인 후 연결할 수 있습니다.', 'FACEBOOK_LOGIN_REQUIRED');
+  const account = { id: createId('acct_'), provider, displayName, handle, status: 'connected', mode: 'sandbox', slotNumbers: [], connectedAt: new Date().toISOString() };
   accounts.unshift(account);
   await writeCollection(store, 'accounts', accounts);
   await appendLog(store, 'account.connected', `${displayName} 계정 연결`, { provider, accountId: account.id });

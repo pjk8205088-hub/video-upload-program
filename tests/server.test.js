@@ -15,6 +15,17 @@ test('MVP upload limit is 2 GB and the board has ten slots', () => {
   assert.equal(MAX_FILE_SIZE, 2 * 1024 * 1024 * 1024);
 });
 
+test('TikTok account connection requires a connected Facebook account', async () => withServer(async (base) => {
+  const blocked = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'tiktok', displayName: 'TikTok 채널', handle: '@tiktok' }) });
+  assert.equal(blocked.response.status, 400);
+  assert.equal(blocked.payload.error.code, 'FACEBOOK_LOGIN_REQUIRED');
+
+  const facebook = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'facebook', displayName: 'Facebook 페이지', handle: '@facebook' }) });
+  assert.equal(facebook.response.status, 201);
+  const allowed = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'tiktok', displayName: 'TikTok 채널', handle: '@tiktok' }) });
+  assert.equal(allowed.response.status, 201);
+}));
+
 async function withServer(callback) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'upload-desk-'));
   const store = createStore(root);
@@ -73,9 +84,11 @@ test('slot routing, duplicate protection, sandbox publish, analytics and comment
 
 test('failed sandbox jobs schedule exponential retry and manual retry can recover', async () => withServer(async (base) => {
   const original = process.env.UPLOAD_DESK_MOCK_FAILURES;
-  process.env.UPLOAD_DESK_MOCK_FAILURES = 'tiktok';
+    process.env.UPLOAD_DESK_MOCK_FAILURES = 'tiktok';
   try {
     const video = await upload(base, 2, 'retry-video.mp4');
+    const facebook = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'facebook', displayName: 'Retry Facebook', handle: '@retry-facebook' }) });
+    assert.equal(facebook.response.status, 201);
     const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'tiktok', displayName: 'Retry 채널', handle: '@retry' }) });
     const campaign = await json(base, '/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: '재시도 테스트', scheduledAt: new Date(Date.now() - 1000).toISOString(), routes: [{ accountId: account.payload.account.id, slotNumber: video.payload.video.slotNumber }] }) });
     const run = await json(base, `/api/campaigns/${campaign.payload.campaign.id}/run`, { method: 'POST' });

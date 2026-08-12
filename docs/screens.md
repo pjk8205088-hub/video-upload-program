@@ -19,3 +19,4 @@ SNS 계정 카드마다 번호 1~10 스위치가 있다. 해당 번호의 영상
 ## 계정 로그인 페이지
 
 환경설정 아래에 Instagram, 네이버 클립, TikTok, Facebook 하위 메뉴를 둔다. 각 페이지는 서비스별 OAuth 방식, 요청 권한(scope), 연결 상태, 연결된 계정, 로그인 시작 버튼을 독립적으로 보여준다. 실제 OAuth 자격 증명이 없는 sandbox에서는 계정 식별자 입력 modal을 열고, 실서비스 전환 시 provider별 OAuth callback으로 교체한다.
+TikTok 카드에는 Facebook 로그인 상태를 선행 조건으로 표시하고, Facebook이 연결되지 않으면 TikTok 로그인 버튼을 차단한다.

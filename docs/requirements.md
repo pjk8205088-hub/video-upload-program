@@ -26,6 +26,7 @@
 - FR-08: 캘린더, 통계, 댓글 답글·숨김·해제, 활동 로그를 제공한다.
 - FR-09: Electron에서 Windows 로그인 시작, 백그라운드 실행, 업데이트 확인을 제어한다.
 - FR-10: 환경설정 아래에 Instagram, 네이버 클립, TikTok, Facebook별 로그인 페이지를 제공하고 provider별 OAuth callback 연결 지점을 분리한다.
+- FR-11: TikTok 계정 연결과 업로드 경로 선택은 Facebook 계정이 연결된 경우에만 허용한다.
 
 ## 비기능 요구사항
 

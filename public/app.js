@@ -9,7 +9,7 @@ const providers = {
 const supportedProviderKeys = new Set(Object.keys(providers));
 const loginProviders = [
   { key: 'instagram', label: 'Instagram', code: 'IG', service: 'Meta OAuth', accent: 'coral', title: 'Instagram Business 계정', description: '릴스와 피드 게시 권한을 연결합니다.', scopes: 'instagram_content_publish · instagram_basic' },
-  { key: 'tiktok', label: 'TikTok', code: 'TT', service: 'TikTok OAuth', accent: 'violet', title: 'TikTok 계정', description: '짧은 동영상 게시 권한을 연결합니다.', scopes: 'video.publish · user.info.basic' },
+  { key: 'tiktok', label: 'TikTok', code: 'TT', service: 'TikTok OAuth', accent: 'violet', title: 'TikTok 계정', description: 'Facebook 로그인으로 TikTok 연결을 진행합니다.', scopes: 'video.publish · user.info.basic', requiresProvider: 'facebook' },
   { key: 'naver', label: '네이버 클립', code: 'NV', service: 'NAVER OAuth', accent: 'green', title: '네이버 클립 채널', description: '클립 콘텐츠 게시 권한을 연결합니다.', scopes: 'clip.publish · profile.read' },
   { key: 'facebook', label: 'Facebook', code: 'FB', service: 'Meta OAuth', accent: 'blue', title: 'Facebook 페이지', description: '페이지 동영상 게시와 댓글 관리 권한을 연결합니다.', scopes: 'pages_manage_posts · pages_read_engagement' }
 ];
@@ -28,6 +28,9 @@ function providerFor(key) { return providers[key] || { label: key, code: '??' };
 function videoForSlot(slot) { return state.videos.find((video) => video.slotNumber === Number(slot)); }
 function showToast(message, isError = false) { const toast = $('#toast'); toast.textContent = message; toast.classList.toggle('is-error', isError); toast.classList.add('is-visible'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove('is-visible'), 3400); }
 async function api(url, options = {}) { const response = await fetch(url, options); const payload = await response.json().catch(() => ({})); if (!response.ok) throw Object.assign(new Error(payload.error?.message || '요청을 처리하지 못했습니다.'), { payload, status: response.status }); return payload; }
+function loginProviderFor(key) { return loginProviders.find((item) => item.key === key); }
+function hasLoginPrerequisite(providerKey) { const provider = loginProviderFor(providerKey); return !provider?.requiresProvider || state.accounts.some((account) => account.provider === provider.requiresProvider && account.status === 'connected'); }
+function requireLoginPrerequisite(providerKey) { const provider = loginProviderFor(providerKey); if (!provider?.requiresProvider || hasLoginPrerequisite(providerKey)) return true; const prerequisite = providerFor(provider.requiresProvider); showToast(`${provider.label}은(는) ${prerequisite.label} 로그인 후 진행할 수 있습니다.`, true); document.querySelector(`#login-${provider.requiresProvider}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return false; }
 
 function selectedRoutes() { return state.accounts.filter((account) => state.quickProviders.has(account.provider)).flatMap((account) => (account.slotNumbers || []).filter((slot) => videoForSlot(slot)).map((slotNumber) => ({ accountId: account.id, slotNumber }))); }
 function syncQuickProviders() { state.quickProviders = new Set(state.accounts.filter((account) => videoForSlot(state.selectedSlot) && (account.slotNumbers || []).includes(state.selectedSlot)).map((account) => account.provider)); }
@@ -46,6 +49,7 @@ function renderQuickPublish() {
 }
 
 async function activateQuickProvider(providerKey) {
+  if (!requireLoginPrerequisite(providerKey)) return;
   const provider = providerFor(providerKey);
   const video = videoForSlot(state.selectedSlot);
   const accounts = state.accounts.filter((item) => item.provider === providerKey);
@@ -186,6 +190,7 @@ function renderQuickPublish() {
 }
 
 async function toggleQuickProviderSlot(providerKey, slotNumber) {
+  if (!requireLoginPrerequisite(providerKey)) return;
   const slot = Number(slotNumber);
   const provider = providerFor(providerKey);
   const video = videoForSlot(slot);
@@ -250,8 +255,11 @@ function renderLoginPages() {
   if (!target) return;
   target.innerHTML = loginProviders.map((item, index) => {
     const linked = state.accounts.filter((account) => account.provider === item.key);
+    const prerequisite = item.requiresProvider ? providerFor(item.requiresProvider) : null;
+    const prerequisiteReady = hasLoginPrerequisite(item.key);
+    const prerequisiteNotice = prerequisite ? `<div class="login-prerequisite${prerequisiteReady ? ' is-ready' : ' is-blocked'}"><span class="login-prerequisite-light"></span><span>${prerequisite.label} 로그인 ${prerequisiteReady ? '완료' : '필요'}</span>${prerequisiteReady ? '' : `<a href="#login-${item.requiresProvider}" data-scroll-target="#login-${item.requiresProvider}">${prerequisite.label} 로그인으로 이동</a>`}</div>` : '';
     const accounts = linked.length ? linked.map((account) => `<div class="login-account"><span class="login-account-dot"></span><div><strong>${escapeHtml(account.displayName)}</strong><small>${escapeHtml(account.handle)}</small></div><span class="login-account-state">CONNECTED</span></div>`).join('') : '<div class="login-empty">아직 연결된 계정이 없습니다.</div>';
-    return `<article class="login-page login-${item.key}" id="login-${item.key}"><div class="login-page-head"><span class="login-brand login-brand-${item.accent}">${item.code}</span><div><span class="eyebrow">${item.service}</span><h3>${item.label} 로그인</h3></div><span class="login-page-index">${String(index + 1).padStart(2, '0')}</span></div><div class="login-copy"><strong>${item.title}</strong><p>${item.description}</p><span class="login-scopes">${item.scopes}</span></div><div class="login-connected"><div class="login-connected-label"><span>연결 상태</span><b>${linked.length ? `${linked.length}개 연결됨` : '연결 대기'}</b></div>${accounts}</div><button class="button login-button login-button-${item.accent}" data-login-provider="${item.key}" type="button">${linked.length ? '다른 계정 연결' : `${item.label} 로그인 시작`} <span>→</span></button><div class="login-page-footer"><span>OAuth callback seam</span><span>${linked.length ? 'SANDBOX CONNECTED' : 'READY TO CONNECT'}</span></div></article>`;
+    return `<article class="login-page login-${item.key}" id="login-${item.key}"><div class="login-page-head"><span class="login-brand login-brand-${item.accent}">${item.code}</span><div><span class="eyebrow">${item.service}</span><h3>${item.label} 로그인</h3></div><span class="login-page-index">${String(index + 1).padStart(2, '0')}</span></div><div class="login-copy"><strong>${item.title}</strong><p>${item.description}</p><span class="login-scopes">${item.scopes}</span></div>${prerequisiteNotice}<div class="login-connected"><div class="login-connected-label"><span>연결 상태</span><b>${linked.length ? `${linked.length}개 연결됨` : '연결 대기'}</b></div>${accounts}</div><button class="button login-button login-button-${item.accent}${prerequisite && !prerequisiteReady ? ' is-blocked' : ''}" data-login-provider="${item.key}" type="button">${prerequisite && !prerequisiteReady ? `${prerequisite.label} 로그인 필요` : linked.length ? '다른 계정 연결' : `${item.label} 로그인 시작`} <span>→</span></button><div class="login-page-footer"><span>OAuth callback seam</span><span>${linked.length ? 'SANDBOX CONNECTED' : prerequisite && !prerequisiteReady ? 'FACEBOOK AUTH REQUIRED' : 'READY TO CONNECT'}</span></div></article>`;
   }).join('');
 }
 
@@ -449,9 +457,9 @@ document.addEventListener('click', (event) => {
   if (target.dataset.uploadSlot) startFilePicker(target.dataset.uploadSlot);
   if (target.dataset.selectSlot) { state.selectedSlot = Number(target.dataset.selectSlot); const video = videoForSlot(state.selectedSlot); if (video && !$('#campaignTitle').value) fillMetadata(video); renderAll(); }
   if (target.dataset.deleteVideo) deleteVideo(target.dataset.deleteVideo);
-  if (target.dataset.quickProvider) activateQuickProvider(target.dataset.quickProvider);
-  if (target.dataset.quickSlotProvider) toggleQuickProviderSlot(target.dataset.quickSlotProvider, target.dataset.slotNumber);
-  if (target.dataset.loginProvider) openAccountModal(target.dataset.loginProvider);
+  if (target.dataset.quickProvider && requireLoginPrerequisite(target.dataset.quickProvider)) activateQuickProvider(target.dataset.quickProvider);
+  if (target.dataset.quickSlotProvider && requireLoginPrerequisite(target.dataset.quickSlotProvider)) toggleQuickProviderSlot(target.dataset.quickSlotProvider, target.dataset.slotNumber);
+  if (target.dataset.loginProvider && requireLoginPrerequisite(target.dataset.loginProvider)) openAccountModal(target.dataset.loginProvider);
   if (target.dataset.openAccount || target.id === 'openAccountButton') openAccountModal();
   if (target.dataset.removeAccount) removeAccount(target.dataset.removeAccount);
   if (target.dataset.runCampaign) runCampaign(target.dataset.runCampaign);
