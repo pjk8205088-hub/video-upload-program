@@ -22,7 +22,7 @@
         <nav>
           <a class="nav-link is-active" href="#slots"><span>01</span>슬롯 보드<b id="navVideoCount">0/10</b></a>
           <a class="nav-link" href="#routing"><span>02</span>계정 라우팅<b id="navAccountCount">0</b></a>
-          <a class="nav-link" href="#schedule"><span>03</span>예약 캘린더<b id="navCampaignCount">0</b></a>
+          <a class="nav-link" href="#schedule"><span>03</span>예약 작업<b id="navCampaignCount">0</b></a>
           <a class="nav-link" href="#insights"><span>04</span>통계 · 댓글</a>
           <a class="nav-link" href="#settings"><span>06</span>환경설정</a>
           <div class="nav-submenu" aria-label="계정 로그인">
@@ -75,7 +75,7 @@
           <div id="campaignList" class="campaign-list"></div><div id="campaignEmpty" class="empty-inline">아직 예약 작업이 없습니다.</div>
         </section>
 
-        <section class="panel" id="calendarPanel"><div class="panel-head"><div><span class="eyebrow">04 / VISUAL CALENDAR</span><h2>예약 캘린더</h2><p>날짜를 클릭하지 않아도 이번 달 전송 흐름과 작업 상태를 한눈에 확인할 수 있습니다.</p></div><div class="calendar-nav"><button class="button button-ghost" id="prevMonth">←</button><strong id="calendarMonth">—</strong><button class="button button-ghost" id="nextMonth">→</button></div></div><div class="calendar-week"><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span><span>일</span></div><div id="calendarGrid" class="calendar-grid"></div></section>
+        <section class="panel" id="calendarPanel" hidden><div class="panel-head"><div><span class="eyebrow">04 / VISUAL CALENDAR</span><h2>예약 캘린더</h2><p>날짜를 클릭하지 않아도 이번 달 전송 흐름과 작업 상태를 한눈에 확인할 수 있습니다.</p></div><div class="calendar-nav"><button class="button button-ghost" id="prevMonth">←</button><strong id="calendarMonth">—</strong><button class="button button-ghost" id="nextMonth">→</button></div></div><div class="calendar-week"><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span><span>일</span></div><div id="calendarGrid" class="calendar-grid"></div></section>
 
         <section class="insight-grid" id="insights">
           <section class="panel"><div class="panel-head compact"><div><span class="eyebrow">05 / ANALYTICS</span><h2>게시 후 성과</h2></div><button class="button button-ghost" id="refreshAnalytics" type="button">통계 갱신</button></div><div class="metric-strip"><div><span>VIEWS</span><strong id="analyticsViews">0</strong></div><div><span>LIKES</span><strong id="analyticsLikes">0</strong></div><div><span>COMMENTS</span><strong id="analyticsComments">0</strong></div></div><div id="analyticsList" class="insight-list"></div></section>
