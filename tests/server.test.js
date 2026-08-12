@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { formatBytes, MAX_FILE_SIZE, createServer, createStore, ensureStorage } = require('../server');
+const { localMetadata } = require('../lib/ai');
 
 test('formatBytes formats upload sizes for the UI', () => {
   assert.equal(formatBytes(0), '0 B');
@@ -13,6 +14,14 @@ test('formatBytes formats upload sizes for the UI', () => {
 
 test('MVP upload limit is 2 GB and the board has ten slots', () => {
   assert.equal(MAX_FILE_SIZE, 2 * 1024 * 1024 * 1024);
+});
+
+test('Naver Clip metadata gets a format-safe description and category recommendation', () => {
+  const metadata = localMetadata({ fileName: '제주 여행 브이로그.mp4', slotNumber: 2 });
+  assert.equal(metadata.naverClip.primaryCategory, '여행');
+  assert.equal(metadata.naverClip.secondaryCategory, '여행지');
+  assert.ok(metadata.naverClip.description.length <= 300);
+  assert.equal(localMetadata({ fileName: '3.mp4' }).naverClip.primaryCategory, '라이프 이벤트');
 });
 
 test('TikTok account connection requires a connected Facebook account', async () => withServer(async (base) => {
@@ -54,6 +63,8 @@ test('slot routing, duplicate protection, sandbox publish, analytics and comment
   const ai = await json(base, '/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: first.payload.video.id }) });
   assert.equal(ai.response.status, 200);
   assert.equal(ai.payload.metadata.source, 'local-fallback');
+  assert.equal(ai.payload.metadata.naverClip.primaryCategory, '라이프 이벤트');
+  assert.ok(ai.payload.metadata.naverClip.description.length <= 300);
 
   const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'instagram', displayName: 'Sandbox 채널', handle: '@sandbox' }) });
   assert.equal(account.response.status, 201);

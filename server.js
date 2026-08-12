@@ -112,6 +112,11 @@ function cleanText(value, fallback = '', max = 1000) {
   return String(value ?? fallback).trim().slice(0, max);
 }
 
+function cleanNaverClipMetadata(value) {
+  if (!value || typeof value !== 'object') return null;
+  return { title: cleanText(value.title, '', 80), description: cleanText(value.description, '', 300), hashtags: Array.isArray(value.hashtags) ? value.hashtags.map((tag) => cleanText(tag, '', 40)).filter(Boolean).slice(0, 8) : [], primaryCategory: cleanText(value.primaryCategory, '라이프 이벤트', 40), secondaryCategory: cleanText(value.secondaryCategory, '라이프 이벤트', 40) };
+}
+
 function validSlot(value) {
   const slot = Number(value);
   return Number.isInteger(slot) && slot >= 1 && slot <= MAX_SLOTS ? slot : null;
@@ -337,12 +342,13 @@ async function createCampaign(store, req, res) {
   if (!acceptedRoutes.length) return sendError(res, 409, '선택한 영상과 계정 조합은 이미 업로드 또는 예약되어 있습니다.', 'DUPLICATE_ROUTES', { skippedRoutes });
   const firstVideo = videos.find((video) => video.id === acceptedRoutes[0].videoId);
   const metadata = firstVideo?.aiMetadata || {};
+  const naverClip = cleanNaverClipMetadata(body.naverClip || metadata.naverClip);
   const title = cleanText(body.title || metadata.title, '새 콘텐츠', 120);
   const description = cleanText(body.description || metadata.description, '', 1000);
   const hashtags = Array.isArray(body.hashtags) ? body.hashtags.map((tag) => cleanText(tag, '', 40)).filter(Boolean).slice(0, 12) : (metadata.hashtags || []);
   const campaign = {
     id: createId('cmp_'), title, description, hashtags, privacy: cleanText(body.privacy, 'public', 20), scheduledAt: parsedSchedule.toISOString(), status: 'scheduled', mode: 'sandbox', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), routes: acceptedRoutes, skippedRoutes,
-    jobs: acceptedRoutes.map((route) => ({ id: createId('job_'), accountId: route.accountId, provider: route.provider, handle: route.handle, slotNumber: route.slotNumber, videoId: route.videoId, status: 'queued', progress: 0, attempt: 0, maxAttempts: MAX_ATTEMPTS, nextRetryAt: parsedSchedule.toISOString(), lastError: null, externalId: null, analytics: null, logs: [{ message: '예약 작업 생성', level: 'info', createdAt: new Date().toISOString() }] }))
+    jobs: acceptedRoutes.map((route) => ({ id: createId('job_'), accountId: route.accountId, provider: route.provider, handle: route.handle, slotNumber: route.slotNumber, videoId: route.videoId, clipMetadata: route.provider === 'naver' ? naverClip : null, status: 'queued', progress: 0, attempt: 0, maxAttempts: MAX_ATTEMPTS, nextRetryAt: parsedSchedule.toISOString(), lastError: null, analytics: null, logs: [{ message: '예약 작업 생성', level: 'info', createdAt: new Date().toISOString() }] }))
   };
   campaigns.unshift(campaign);
   await writeCollection(store, 'campaigns', campaigns);
@@ -543,7 +549,7 @@ function createServer(options = {}) {
         const videos = await readCollection(store, 'videos');
         const video = videos.find((item) => item.id === body.videoId) || videos.find((item) => item.slotNumber === validSlot(body.slotNumber));
         if (!video) return sendError(res, 404, 'AI 초안을 만들 영상을 찾을 수 없습니다.', 'VIDEO_NOT_FOUND');
-        const metadata = await generateMetadata({ fileName: video.originalName, slotNumber: video.slotNumber, titleHint: body.titleHint });
+        const metadata = await generateMetadata({ fileName: video.originalName, slotNumber: video.slotNumber, titleHint: body.titleHint, provider: body.provider });
         video.aiMetadata = metadata;
         await fsp.writeFile(path.join(store.thumbnailDir, path.basename(video.thumbnailUrl || `${video.id}.svg`)), thumbnailSvg({ title: metadata.title, slotNumber: video.slotNumber, hashtags: metadata.hashtags }), 'utf8');
         await writeCollection(store, 'videos', videos);
