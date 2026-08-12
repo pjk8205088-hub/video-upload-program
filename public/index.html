@@ -24,7 +24,6 @@
           <a class="nav-link" href="#routing"><span>02</span>계정 라우팅<b id="navAccountCount">0</b></a>
           <a class="nav-link" href="#schedule"><span>03</span>예약 캘린더<b id="navCampaignCount">0</b></a>
           <a class="nav-link" href="#insights"><span>04</span>통계 · 댓글</a>
-          <a class="nav-link" href="#library"><span>05</span>활동 로그</a>
           <a class="nav-link" href="#settings"><span>06</span>환경설정</a>
           <div class="nav-submenu" aria-label="계정 로그인">
             <a class="nav-sub-link" href="#login-instagram"><i>IG</i><span>Instagram 로그인</span></a>
@@ -83,7 +82,7 @@
           <section class="panel"><div class="panel-head compact"><div><span class="eyebrow">06 / COMMUNITY</span><h2>댓글 관리</h2></div><span class="sandbox-label">SANDBOX FEED</span></div><div id="commentsList" class="comments-list"></div><div id="commentsEmpty" class="empty-inline">게시된 영상의 mock 댓글이 여기에 표시됩니다.</div></section>
         </section>
 
-        <section class="panel" id="library"><div class="panel-head compact"><div><span class="eyebrow">07 / ACTIVITY LOG</span><h2>작업 로그</h2></div><button class="button button-ghost" id="refreshLogs" type="button">로그 갱신</button></div><div id="logsList" class="logs-list"></div></section>
+        <section class="panel" id="library" hidden><div class="panel-head compact"><div><span class="eyebrow">07 / ACTIVITY LOG</span><h2>작업 로그</h2></div><button class="button button-ghost" id="refreshLogs" type="button">로그 갱신</button></div><div id="logsList" class="logs-list"></div></section>
 
         <section class="panel" id="settings"><div class="panel-head compact"><div><span class="eyebrow">08 / DESKTOP SETTINGS</span><h2>Windows 백그라운드 · 업데이트</h2><p>Electron 앱에서만 Windows 시작 설정이 실제 로그인 항목에 적용됩니다. 브라우저에서는 설정만 저장합니다.</p></div></div><div class="settings-grid"><label class="setting-row"><span><strong>Windows 시작 시 실행</strong><small>로그인 후 Upload Desk를 자동으로 시작</small></span><input id="launchAtStartup" type="checkbox"></label><label class="setting-row"><span><strong>시작 시 백그라운드</strong><small>창을 띄우지 않고 로컬 스케줄러부터 시작</small></span><input id="startMinimized" type="checkbox"></label><label class="setting-row"><span><strong>자동 업데이트 확인</strong><small>Electron Builder publish 채널에서 새 버전을 확인</small></span><input id="autoUpdate" type="checkbox"></label></div><div class="settings-actions"><span id="updateStatus">설정은 로컬 workspace에 저장됩니다.</span><button class="button button-dark" id="checkUpdates" type="button">업데이트 확인</button></div></section>
 
