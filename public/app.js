@@ -136,7 +136,7 @@ function announcePublishedJobs(campaign) {
   drainUploadAnnouncements();
 }
 
-async function uploadAccountVideos(accountId, clipOverride = null) {
+async function uploadAccountVideos(accountId, clipOverride = null, actionLabel = '업로드') {
   const account = state.accounts.find((item) => item.id === accountId);
   if (!account) return;
   const routedVideos = (account.slotNumbers || []).map((slotNumber) => ({ slotNumber, video: videoForSlot(slotNumber) })).filter(({ video }) => video);
@@ -160,7 +160,7 @@ async function uploadAccountVideos(accountId, clipOverride = null) {
     if (index >= 0) state.campaigns[index] = result.campaign;
     await loadInsights();
     renderAll();
-    showToast(`${provider.label} ${routedVideos.length}개 동영상 업로드를 완료했습니다.`);
+    showToast(`${provider.label} ${routedVideos.length}개 동영상 ${actionLabel}를 완료했습니다.`);
     announcePublishedJobs(result.campaign);
   } catch (error) { showToast(error.message, true); }
 }
@@ -294,7 +294,8 @@ function renderAccounts() {
     const switches = Array.from({ length: 10 }, (_, index) => { const slot = index + 1; const hasVideo = Boolean(videoForSlot(slot)); const checked = (account.slotNumbers || []).includes(slot); return `<label class="slot-switch${hasVideo ? '' : ' is-disabled'}" title="${hasVideo ? `${slot}번 영상을 ${provider.label}에 연결` : `${slot}번 슬롯이 비어 있습니다`}"><input type="checkbox" data-account-slot="${escapeHtml(account.id)}" data-slot-number="${slot}" ${checked ? 'checked' : ''} ${hasVideo ? '' : 'disabled'}><span>${slot}</span></label>`; }).join('');
     const canUpload = account.status === 'connected' && routedVideos.length > 0;
     const uploadTitle = account.status !== 'connected' ? '먼저 이 계정에 로그인해 주세요' : routedVideos.length ? `${routedVideos.length}개 영상을 즉시 업로드` : '계정에 업로드할 영상을 먼저 선택해 주세요';
-    return `<article class="account-card provider-${account.provider}"><div class="account-head"><span class="provider-code">${provider.code}</span><div><strong>${escapeHtml(account.displayName)}</strong><small>${provider.label} · ${escapeHtml(account.handle)}</small></div><span class="connected-dot">●</span><button class="account-upload-button" data-upload-account="${escapeHtml(account.id)}" type="button" ${canUpload ? '' : 'disabled'} title="${uploadTitle}">동영상 올리기</button></div><div class="account-route-label"><span>게시할 번호</span><b>${checkedCount}개</b></div>${videoPreviews}<div class="slot-switches">${switches}</div><div class="account-footer"><span>${account.mode === 'sandbox' ? 'SANDBOX ADAPTER' : 'OAUTH CONNECTED'}</span><button class="text-button" data-remove-account="${escapeHtml(account.id)}" type="button">연결 해제</button></div></article>`;
+    const accountActionLabel = account.provider === 'naver' ? '등록' : '동영상 올리기';
+    return `<article class="account-card provider-${account.provider}"><div class="account-head"><span class="provider-code">${provider.code}</span><div><strong>${escapeHtml(account.displayName)}</strong><small>${provider.label} · ${escapeHtml(account.handle)}</small></div><span class="connected-dot">●</span><button class="account-upload-button" data-upload-account="${escapeHtml(account.id)}" type="button" ${canUpload ? '' : 'disabled'} title="${uploadTitle}">${accountActionLabel}</button></div><div class="account-route-label"><span>게시할 번호</span><b>${checkedCount}개</b></div>${videoPreviews}<div class="slot-switches">${switches}</div><div class="account-footer"><span>${account.mode === 'sandbox' ? 'SANDBOX ADAPTER' : 'OAUTH CONNECTED'}</span><button class="text-button" data-remove-account="${escapeHtml(account.id)}" type="button">연결 해제</button></div></article>`;
   }).join('');
   renderRouteSummary();
 }
@@ -407,7 +408,7 @@ function fillMetadata(video) {
 }
 async function generateAi() { const video = videoForSlot(state.selectedSlot); if (!video) return showToast('먼저 영상을 선택해 주세요.', true); try { const result = await api('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: video.id }) }); Object.assign(video, result.video); fillMetadata(video); showToast(result.metadata.source === 'openai' ? 'OpenAI 초안을 적용했습니다.' : '로컬 fallback 초안을 적용했습니다.'); } catch (error) { showToast(error.message, true); } }
 async function generateNaverClip() { const video = videoForSlot(state.selectedSlot); if (!video) return showToast('먼저 영상을 선택해 주세요.', true); if (!hasNaverClipRoute()) return showToast('먼저 네이버 클립 계정에 영상 번호를 연결해 주세요.', true); try { const result = await api('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: video.id, provider: 'naver' }) }); Object.assign(video, result.video); fillMetadata(video); applyNaverClipMetadata(result.metadata.naverClip, true); renderAll(); showToast('네이버 클립 문구와 카테고리를 자동 선택했습니다.'); } catch (error) { showToast(error.message, true); } }
-async function registerNaverClip() { const account = state.accounts.find((item) => item.provider === 'naver' && item.status === 'connected' && (item.slotNumbers || []).includes(state.selectedSlot)); if (!account) return showToast('현재 영상에 연결된 네이버 클립 계정이 없습니다.', true); const clip = readNaverClipForm(); if (!clip || clip.description.length < 10 || !clip.primaryCategory || !clip.secondaryCategory) return showToast('클립 설명을 10자 이상 입력하고 카테고리를 선택해 주세요.', true); await uploadAccountVideos(account.id, clip); }
+async function registerNaverClip() { const account = state.accounts.find((item) => item.provider === 'naver' && item.status === 'connected' && (item.slotNumbers || []).includes(state.selectedSlot)); if (!account) return showToast('현재 영상에 연결된 네이버 클립 계정이 없습니다.', true); const clip = readNaverClipForm(); if (!clip || clip.description.length < 10 || !clip.primaryCategory || !clip.secondaryCategory) return showToast('클립 설명을 10자 이상 입력하고 카테고리를 선택해 주세요.', true); await uploadAccountVideos(account.id, clip, '등록'); }
 
 function validateFile(file) { const extension = file.name.split('.').pop().toLowerCase(); if (!allowedExtensions.has(extension)) return 'MP4, MOV, WebM, MKV 파일만 올릴 수 있습니다.'; if (file.size > maxFileSize) return '파일 크기는 2 GB 이하여야 합니다.'; if (!file.size) return '빈 파일은 업로드할 수 없습니다.'; return null; }
 function firstFreeSlot() { return Array.from({ length: 10 }, (_, index) => index + 1).find((slot) => !videoForSlot(slot)); }
@@ -543,7 +544,7 @@ document.addEventListener('click', (event) => {
   if (target.dataset.quickSlotProvider && requireLoginPrerequisite(target.dataset.quickSlotProvider)) toggleQuickProviderSlot(target.dataset.quickSlotProvider, target.dataset.slotNumber);
   if (target.dataset.loginProvider && requireLoginPrerequisite(target.dataset.loginProvider)) openAccountModal(target.dataset.loginProvider);
   if (target.dataset.openAccount || target.id === 'openAccountButton') openAccountModal();
-  if (target.dataset.uploadAccount) uploadAccountVideos(target.dataset.uploadAccount);
+  if (target.dataset.uploadAccount) { const account = state.accounts.find((item) => item.id === target.dataset.uploadAccount); uploadAccountVideos(target.dataset.uploadAccount, null, account?.provider === 'naver' ? '등록' : '업로드'); }
   if (target.id === 'registerNaverClipButton') registerNaverClip();
   if (target.dataset.removeAccount) removeAccount(target.dataset.removeAccount);
   if (target.dataset.runCampaign) runCampaign(target.dataset.runCampaign);
