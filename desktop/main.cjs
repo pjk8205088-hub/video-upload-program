@@ -10,10 +10,10 @@ let localServer;
 let autoUpdater;
 
 const AUTH_CONFIG = {
-  instagram: { url: 'https://www.instagram.com/accounts/login/', cookieUrls: ['https://www.instagram.com'], cookieNames: ['sessionid', 'ds_user_id'] },
-  tiktok: { url: 'https://www.tiktok.com/login/phone-or-email/email', cookieUrls: ['https://www.tiktok.com'], cookieNames: ['sessionid', 'sid_tt', 'sessionid_ss', 'sid_guard'] },
-  naver: { url: 'https://nid.naver.com/nidlogin.login', cookieUrls: ['https://www.naver.com', 'https://nid.naver.com'], cookieNames: ['NID_AUT', 'NID_SES'] },
-  facebook: { url: 'https://www.facebook.com/?locale=ko_KR', cookieUrls: ['https://www.facebook.com'], cookieNames: ['c_user', 'xs'] }
+  instagram: { url: 'https://www.instagram.com/accounts/login/', uploadUrl: 'https://www.instagram.com/', cookieUrls: ['https://www.instagram.com'], cookieNames: ['sessionid', 'ds_user_id'] },
+  tiktok: { url: 'https://www.tiktok.com/login/phone-or-email/email', uploadUrl: 'https://www.tiktok.com/upload?lang=ko-KR', cookieUrls: ['https://www.tiktok.com'], cookieNames: ['sessionid', 'sid_tt', 'sessionid_ss', 'sid_guard'] },
+  naver: { url: 'https://nid.naver.com/nidlogin.login', uploadUrl: 'https://clipcreators.naver.com/', cookieUrls: ['https://www.naver.com', 'https://nid.naver.com'], cookieNames: ['NID_AUT', 'NID_SES'] },
+  facebook: { url: 'https://www.facebook.com/?locale=ko_KR', uploadUrl: 'https://www.facebook.com/', cookieUrls: ['https://www.facebook.com'], cookieNames: ['c_user', 'xs'] }
 };
 
 app.setName('Upload Desk');
@@ -28,16 +28,21 @@ function credentialsFile() { return path.join(app.getPath('userData'), 'secure',
 function readCredentialVault() { try { return JSON.parse(fs.readFileSync(credentialsFile(), 'utf8')); } catch { return { version: 1, providers: {} }; } }
 function writeCredentialVault(vault) { fs.mkdirSync(path.dirname(credentialsFile()), { recursive: true }); fs.writeFileSync(credentialsFile(), JSON.stringify(vault, null, 2), 'utf8'); }
 
-async function hasProviderAuthCookie(authWindow, provider) {
+async function hasProviderAuthCookieInSession(authSession, provider) {
   const config = AUTH_CONFIG[provider];
-  if (!config || authWindow.isDestroyed()) return false;
+  if (!config) return false;
   for (const url of config.cookieUrls) {
     try {
-      const cookies = await authWindow.webContents.session.cookies.get({ url });
+      const cookies = await authSession.cookies.get({ url });
       if (cookies.some((cookie) => config.cookieNames.includes(cookie.name) && String(cookie.value || '').length > 0)) return true;
     } catch {}
   }
   return false;
+}
+
+async function hasProviderAuthCookie(authWindow, provider) {
+  if (authWindow.isDestroyed()) return false;
+  return hasProviderAuthCookieInSession(authWindow.webContents.session, provider);
 }
 
 async function clearProviderAuth(provider) {
@@ -82,6 +87,21 @@ function verifyProviderLogin(provider) {
   });
 }
 
+async function openProviderUpload(provider) {
+  const config = AUTH_CONFIG[provider];
+  if (!config?.uploadUrl || !mainWindow) return { opened: false, reason: 'unsupported' };
+  const authSession = session.fromPartition('persist:upload-desk-auth');
+  if (!await hasProviderAuthCookieInSession(authSession, provider)) return { opened: false, reason: 'login_required' };
+  const uploadWindow = new BrowserWindow({ parent: mainWindow, width: 1440, height: 920, minWidth: 1080, minHeight: 720, title: `${provider} 동영상 업로드`, autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: 'persist:upload-desk-auth' } });
+  try {
+    await uploadWindow.loadURL(config.uploadUrl);
+    return { opened: true, provider, url: config.uploadUrl };
+  } catch (error) {
+    if (!uploadWindow.isDestroyed()) uploadWindow.close();
+    return { opened: false, provider, reason: 'load_failed', message: error.message };
+  }
+}
+
 function reportStartupError(error) {
   const message = error?.stack || String(error);
   try { const logPath = path.join(app.getPath('userData'), 'startup-error.log'); fs.mkdirSync(path.dirname(logPath), { recursive: true }); fs.writeFileSync(logPath, message, 'utf8'); } catch {}
@@ -101,6 +121,7 @@ function registerIpc() {
     try { await autoUpdater.checkForUpdatesAndNotify(); return { status: 'checked' }; } catch (error) { return { status: 'error', message: error.message }; }
   });
   ipcMain.handle('auth:verify-login', (_event, provider) => verifyProviderLogin(String(provider || '').trim().toLowerCase()));
+  ipcMain.handle('auth:open-upload', (_event, provider) => openProviderUpload(String(provider || '').trim().toLowerCase()));
   ipcMain.handle('auth:force-logout', (_event, provider) => clearProviderAuth(String(provider || '').trim().toLowerCase()));
   ipcMain.handle('speech:speak', (_event, text) => {
     if (process.platform !== 'win32' || !String(text || '').trim()) return { supported: false };
