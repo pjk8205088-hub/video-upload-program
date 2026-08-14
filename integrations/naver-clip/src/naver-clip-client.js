@@ -6,6 +6,19 @@ const CREATOR_ORIGIN = "https://clipcreators.naver.com";
 const CONTENTS_URL = `${CREATOR_ORIGIN}/web/contents/clips`;
 const UPLOAD_URL = `${CREATOR_ORIGIN}/web/upload`;
 
+export function classifyUploadState({ url, bodyText, fileName, playable }) {
+  const text = String(bodyText || "");
+  const onDraftPage = /\/web\/draft\/\d+/i.test(String(url || ""));
+  const hasFile = !fileName || text.includes(fileName);
+  const hasFailure = /(업로드|인코딩|동영상 처리)\s*(실패|오류)/.test(text);
+  const isProcessing = /(인코딩 중|인코딩 진행 중|업로드 중)/.test(text);
+
+  if (hasFailure) return "failed";
+  if (onDraftPage && hasFile && playable && !isProcessing) return "ready";
+  if (onDraftPage && hasFile) return "processing";
+  return "waiting";
+}
+
 export class LoginRequiredError extends Error {
   constructor(message = "브라우저에서 네이버 로그인이 필요합니다.") {
     super(message);
@@ -107,62 +120,101 @@ export class NaverClipClient {
     const normalized = this.#validateVideos(videos, finalize);
     await this.ensureLoggedIn();
 
-    await this.page.goto(UPLOAD_URL, { waitUntil: "domcontentloaded" });
-    await this.#selectFiles(normalized.map((video) => video.filePath));
-    await this.#waitForUploadCompletion(normalized);
-
-    const toContents = this.page.getByRole("button", { name: "콘텐츠 메뉴로 이동" });
-    if (await toContents.isVisible().catch(() => false)) {
-      await toContents.click();
-    } else {
-      await this.page.goto(CONTENTS_URL, { waitUntil: "domcontentloaded" });
-    }
-
-    if (!finalize) {
-      return normalized.map((video) => ({ ...video, status: "draft" }));
-    }
-
     const results = [];
     for (const video of normalized) {
-      results.push(await this.#registerDraft(video));
+      await this.page.goto(UPLOAD_URL, { waitUntil: "domcontentloaded" });
+      await this.#selectFiles([video.filePath]);
+      const draftUrl = await this.#waitForUploadCompletion(video);
+
+      if (!finalize) {
+        results.push({
+          filePath: video.filePath,
+          caption: video.caption,
+          status: "draft",
+          draftUrl
+        });
+        continue;
+      }
+
+      results.push(await this.#registerCurrentDraft(video, draftUrl));
     }
     return results;
   }
 
+  /**
+   * 이미 업로드된 초안을 이어서 최종 등록합니다.
+   * @param {object} options
+   * @param {string} options.draftUrl Naver Clip `/web/draft/{id}` URL
+   * @param {{filePath:string, caption?:string, title?:string, category:string[], visibility?:'public'|'private'|'current'}} options.video
+   */
+  async finalizeDraft({ draftUrl, video } = {}) {
+    this.#assertStarted();
+    if (!/^https:\/\/clipcreators\.naver\.com\/web\/draft\/\d+$/i.test(String(draftUrl || ""))) {
+      throw new TypeError("올바른 네이버 클립 draftUrl을 전달하세요.");
+    }
+
+    const normalized = this.#validateVideos([video], true)[0];
+    await this.ensureLoggedIn();
+    await this.page.goto(draftUrl, { waitUntil: "domcontentloaded" });
+    const readyDraftUrl = await this.#waitForUploadCompletion(normalized);
+    return this.#registerCurrentDraft(normalized, readyDraftUrl);
+  }
+
   async #selectFiles(filePaths) {
-    const fileInput = this.page.locator('input[type="file"]').last();
-    if ((await fileInput.count()) > 0) {
-      await fileInput.setInputFiles(filePaths);
+    const chooseButton = this.page.getByRole("button", {
+      name: "파일 선택",
+      exact: true
+    });
+    if (await chooseButton.isVisible().catch(() => false)) {
+      const [chooser] = await Promise.all([
+        this.page.waitForEvent("filechooser"),
+        chooseButton.click()
+      ]);
+      await chooser.setFiles(filePaths);
       return;
     }
 
-    const [chooser] = await Promise.all([
-      this.page.waitForEvent("filechooser"),
-      this.page.getByRole("button", { name: "파일 선택", exact: true }).click()
-    ]);
-    await chooser.setFiles(filePaths);
+    const fileInput = this.page.locator('input[type="file"]').last();
+    await fileInput.waitFor({ state: "attached" });
+    await fileInput.setInputFiles(filePaths);
   }
 
-  async #waitForUploadCompletion(videos) {
-    const completion = this.page.getByText("업로드 완료", { exact: true });
-    await completion.waitFor({ state: "visible", timeout: this.timeoutMs * 3 });
+  async #waitForUploadCompletion(video) {
+    const fileName = path.basename(video.filePath);
+    const timeout = this.timeoutMs * 3;
+    const deadline = Date.now() + timeout;
 
-    for (const video of videos) {
-      const fileName = path.basename(video.filePath);
-      await this.page
-        .getByText(fileName, { exact: true })
-        .waitFor({ state: "visible", timeout: 10_000 })
-        .catch(() => undefined);
-    }
-  }
-
-  async #registerDraft(video) {
-    await this.page.goto(CONTENTS_URL, { waitUntil: "domcontentloaded" });
-    const row = await this.#findDraftRow(video);
-    await row.getByRole("button").first().click();
-
+    await this.page.waitForURL(/\/web\/draft\/\d+/, { timeout });
     await this.page
-      .getByRole("heading", { name: /동영상 (등록|수정)/ })
+      .getByRole("textbox", { name: "경험을 기록해보세요." })
+      .waitFor({ state: "visible", timeout });
+
+    while (Date.now() < deadline) {
+      const bodyText = await this.page.locator("body").innerText();
+      const playable = await this.page
+        .getByRole("button", { name: "재생", exact: true })
+        .isVisible()
+        .catch(() => false);
+      const state = classifyUploadState({
+        url: this.page.url(),
+        bodyText,
+        fileName,
+        playable
+      });
+
+      if (state === "ready") return this.page.url();
+      if (state === "failed") {
+        throw new Error(`네이버 클립 영상 처리에 실패했습니다: ${fileName}`);
+      }
+      await this.page.waitForTimeout(500);
+    }
+
+    throw new Error(`네이버 클립 영상 처리 시간이 초과되었습니다: ${fileName}`);
+  }
+
+  async #registerCurrentDraft(video, draftUrl) {
+    await this.page
+      .getByRole("textbox", { name: "경험을 기록해보세요." })
       .waitFor({ state: "visible" });
 
     const captionBox = this.page.getByRole("textbox", {
@@ -172,7 +224,8 @@ export class NaverClipClient {
 
     await this.#chooseCategory(video.category);
     await this.#setVisibility(video.visibility);
-    await this.page.getByRole("button", { name: "등록", exact: true }).click();
+    const registerButton = this.page.getByRole("button", { name: "등록", exact: true });
+    await registerButton.click();
 
     await this.page.waitForURL(/\/web\/contents(?:\/clips)?/, {
       timeout: this.timeoutMs
@@ -187,58 +240,47 @@ export class NaverClipClient {
     if (video.visibility === "public" && !statusText.includes("공개")) {
       throw new Error(`최종 등록 상태를 확인하지 못했습니다: ${video.caption}`);
     }
+    if (video.visibility === "private" && !statusText.includes("비공개")) {
+      throw new Error(`비공개 등록 상태를 확인하지 못했습니다: ${video.caption}`);
+    }
 
     return {
       filePath: video.filePath,
       caption: video.caption,
       category: video.category,
       visibility: video.visibility,
-      status: video.visibility === "private" ? "private" : "published"
+      status: video.visibility === "private" ? "private" : "published",
+      draftUrl,
+      rowText: statusText.replace(/\s+/g, " ").trim()
     };
   }
 
-  async #findDraftRow(video) {
-    const candidates = [
-      path.basename(video.filePath),
-      video.caption,
-      video.draftName
-    ];
-
-    for (const candidate of candidates) {
-      const row = this.page.locator("tr").filter({ hasText: candidate }).first();
-      if (await row.isVisible().catch(() => false)) return row;
-    }
-
-    throw new Error(`업로드된 임시 동영상을 찾지 못했습니다: ${video.filePath}`);
-  }
-
   async #chooseCategory(category) {
-    if (!Array.isArray(category) || category.length < 1) {
+    if (!Array.isArray(category) || category.length < 2) {
       throw new Error("최종 등록에는 category가 필요합니다.");
     }
 
-    for (const categoryName of category) {
-      const exactButton = this.page.getByRole("button", {
-        name: categoryName,
-        exact: true
-      });
-      if (await exactButton.isVisible().catch(() => false)) {
-        await exactButton.click();
-        await this.page.waitForTimeout(250);
-        continue;
-      }
+    const [primary, secondary] = category;
+    await this.page
+      .getByRole("button", { name: "1차 카테고리", exact: true })
+      .click();
+    await this.page
+      .getByRole("button", { name: primary, exact: true })
+      .click();
 
-      const categoryTrigger = this.page.getByRole("button", {
-        name: /카테고리.*선택|선택.*카테고리/
-      });
-      if (await categoryTrigger.isVisible().catch(() => false)) {
-        await categoryTrigger.click();
-      }
+    await this.page
+      .getByRole("button", { name: "2차 카테고리", exact: true })
+      .click();
+    await this.page
+      .getByRole("button", { name: secondary, exact: true })
+      .click();
 
-      const option = this.page.getByText(categoryName, { exact: true }).last();
-      await option.click();
-      await this.page.waitForTimeout(250);
-    }
+    await this.page
+      .getByRole("button", { name: primary, exact: true })
+      .waitFor({ state: "visible" });
+    await this.page
+      .getByRole("button", { name: secondary, exact: true })
+      .waitFor({ state: "visible" });
   }
 
   async #setVisibility(visibility) {
@@ -265,8 +307,8 @@ export class NaverClipClient {
       if (caption.length > 300) {
         throw new Error(`설명은 300자 이하여야 합니다: ${video.filePath}`);
       }
-      if (finalize && (!Array.isArray(video.category) || video.category.length === 0)) {
-        throw new Error(`최종 등록할 카테고리를 지정하세요: ${video.filePath}`);
+      if (finalize && (!Array.isArray(video.category) || video.category.length < 2)) {
+        throw new Error(`최종 등록할 1차·2차 카테고리를 지정하세요: ${video.filePath}`);
       }
 
       return {

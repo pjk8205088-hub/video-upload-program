@@ -7,5 +7,6 @@ export {
 export {
   ClipProfileRequiredError,
   LoginRequiredError,
-  NaverClipClient
+  NaverClipClient,
+  classifyUploadState
 } from "./naver-clip-client.js";

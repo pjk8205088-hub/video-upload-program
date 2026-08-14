@@ -96,3 +96,17 @@ try {
 - 카테고리는 임의로 만들지 않습니다. 외부 프로젝트가 실제 카테고리를 전달해야 합니다.
 - `finalize: false`이면 업로드 후 임시 상태로 두고 등록하지 않습니다.
 - 네이버 화면 구조가 변경되면 `src/naver-clip-client.js`의 접근성 이름 기반 선택자를 조정해야 할 수 있습니다.
+
+이미 생성된 초안을 이어서 등록할 수도 있습니다.
+
+```js
+await client.finalizeDraft({
+  draftUrl: "https://clipcreators.naver.com/web/draft/358605",
+  video: {
+    filePath: "H:\\대전 동영상\\1.mp4",
+    caption: "코드 연동 최종 등록 테스트",
+    category: ["프로스포츠", "야구"],
+    visibility: "private"
+  }
+});
+```
