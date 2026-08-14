@@ -9,7 +9,10 @@
     "start:desktop": "electron .",
     "dist:desktop": "electron-builder --win nsis portable",
     "dist:installer": "electron-builder --win nsis",
-    "test": "node --test tests/server.test.js"
+    "test": "node --test tests/server.test.js tests/auth.test.js tests/upload.test.js",
+    "test:auth": "node --test tests/auth.test.js",
+    "test:upload": "node --test tests/upload.test.js",
+    "test:headless": "node --test tests/auth.test.js tests/upload.test.js"
   },
   "devDependencies": {
     "electron": "^31.0.0",

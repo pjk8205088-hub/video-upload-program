@@ -7,6 +7,8 @@ const { URL } = require('node:url');
 const { generateMetadata } = require('./lib/ai');
 const { thumbnailSvg } = require('./lib/thumbnail');
 const { PROVIDERS, getProviderAdapter } = require('./lib/providers');
+const { normalizeAccounts, upsertVerifiedAccount } = require('./lib/auth');
+const { buildUploadRoutes, executeUploadJob, selectReadyJobs } = require('./lib/upload');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -93,30 +95,9 @@ function normalizedHandle(value) {
 
 async function readAccounts(store) {
   const accounts = await readCollection(store, 'accounts');
-  const seen = new Map();
-  const normalized = [];
-  let changed = false;
-  for (const account of accounts) {
-    const key = `${account.provider}:single-account`;
-    if (seen.has(key)) {
-      const existing = seen.get(key);
-      existing.slotNumbers = [...new Set([...(existing.slotNumbers || []), ...(account.slotNumbers || [])])].sort((a, b) => a - b);
-      if (account.status === 'connected' && account.authVerified === true) Object.assign(existing, { ...account, id: existing.id, slotNumbers: existing.slotNumbers });
-      changed = true;
-      continue;
-    }
-    const next = { ...account };
-    if (next.status === 'connected' && next.authVerified !== true) {
-      next.status = 'login_required';
-      next.authVerified = false;
-      next.mode = 'oauth_pending';
-      changed = true;
-    }
-    seen.set(key, next);
-    normalized.push(next);
-  }
-  if (changed) await writeCollection(store, 'accounts', normalized);
-  return normalized;
+  const normalized = normalizeAccounts(accounts);
+  if (normalized.changed) await writeCollection(store, 'accounts', normalized.accounts);
+  return normalized.accounts;
 }
 
 async function writeCollection(store, kind, value) {
@@ -308,6 +289,24 @@ async function handleDeleteVideo(store, res, id) {
 
 async function createAccount(store, req, res) {
   const body = await readRequestBody(req);
+  const accounts = await readAccounts(store);
+  const result = upsertVerifiedAccount(accounts, body, { createId, now: () => new Date().toISOString() });
+  if (!result.ok) {
+    const messages = {
+      UNSUPPORTED_PROVIDER: 'Unsupported provider',
+      ACCOUNT_FIELDS_REQUIRED: 'Account display name and handle are required',
+      FACEBOOK_LOGIN_REQUIRED: 'TikTok requires a connected Facebook account',
+      ACCOUNT_AUTH_REQUIRED: 'Complete official login verification before connecting the account'
+    };
+    return sendError(res, result.status, messages[result.code] || 'Account connection failed', result.code);
+  }
+  await writeCollection(store, 'accounts', accounts);
+  await appendLog(store, result.existing ? 'account.reconnected' : 'account.connected', `${result.account.displayName} account connected`, { provider: result.account.provider, accountId: result.account.id });
+  return sendJson(res, result.existing ? 200 : 201, result.existing ? { account: result.account, existing: true } : { account: result.account });
+}
+
+async function createAccountLegacy(store, req, res) {
+  const body = await readRequestBody(req);
   const provider = cleanText(body.provider).toLowerCase();
   const displayName = cleanText(body.displayName, '', 120);
   const handle = cleanText(body.handle, '', 160);
@@ -359,6 +358,10 @@ async function deleteAccount(store, res, id) {
 }
 
 function buildRoutes(body, accounts, videos) {
+  return buildUploadRoutes({ body, accounts, videos, maxSlots: MAX_SLOTS });
+}
+
+function buildRoutesLegacy(body, accounts, videos) {
   const input = Array.isArray(body.routes) ? body.routes : [];
   if (!input.length && body.videoId && Array.isArray(body.accountIds)) {
     const video = videos.find((item) => item.id === body.videoId);
@@ -414,6 +417,16 @@ async function createCampaign(store, req, res) {
 }
 
 async function runJob(store, campaign, job, video) {
+  const result = await executeUploadJob({ job, video, campaign, maxAttempts: MAX_ATTEMPTS, retryBaseMs: RETRY_BASE_MS });
+  const comments = await readCollection(store, 'comments');
+  for (const item of result.comments) {
+    if (!comments.some((comment) => comment.externalId === item.externalId)) comments.unshift({ id: createId('comment_'), jobId: job.id, accountId: job.accountId, provider: job.provider, handle: job.handle, externalId: item.externalId, authorName: item.authorName, text: item.text, status: item.status, replies: item.replies || [], createdAt: item.createdAt, updatedAt: item.createdAt });
+  }
+  if (result.comments.length) await writeCollection(store, 'comments', comments);
+  return result.job;
+}
+
+async function runJobLegacy(store, campaign, job, video) {
   if (['published', 'cancelled'].includes(job.status)) return job;
   job.status = 'uploading';
   job.progress = 15;
@@ -458,12 +471,7 @@ async function runCampaign(store, id, force = false) {
   if (!campaign) return null;
   const videos = await readCollection(store, 'videos');
   const now = Date.now();
-  const readyJobs = (campaign.jobs || []).filter((job) => {
-    if (['published', 'cancelled'].includes(job.status)) return false;
-    if (force) return true;
-    if (campaign.scheduledAt && new Date(campaign.scheduledAt).getTime() > now) return false;
-    return !job.nextRetryAt || new Date(job.nextRetryAt).getTime() <= now;
-  });
+  const readyJobs = selectReadyJobs(campaign, { force, now });
   if (!readyJobs.length) return campaign;
   campaign.status = 'running';
   await writeCollection(store, 'campaigns', campaigns);

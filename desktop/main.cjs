@@ -2,6 +2,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, session } = require('electron');
+const { getProviderConfig, hasProviderAuthCookieInSession, clearProviderAuthCookies } = require('../lib/auth');
 
 let createServer;
 let ensureStorage;
@@ -10,13 +11,6 @@ let localServer;
 let autoUpdater;
 let activeNaverUploadWindow;
 const activeAuthFlows = new Map();
-
-const AUTH_CONFIG = {
-  instagram: { url: 'https://www.instagram.com/accounts/login/', uploadUrl: 'https://www.instagram.com/', cookieUrls: ['https://www.instagram.com'], cookieNames: ['sessionid', 'ds_user_id'] },
-  tiktok: { url: 'https://www.tiktok.com/login/phone-or-email/email', uploadUrl: 'https://www.tiktok.com/upload?lang=ko-KR', cookieUrls: ['https://www.tiktok.com'], cookieNames: ['sessionid', 'sid_tt', 'sessionid_ss', 'sid_guard'] },
-  naver: { url: 'https://nid.naver.com/nidlogin.login', uploadUrl: 'https://clipcreators.naver.com/', cookieUrls: ['https://www.naver.com', 'https://nid.naver.com'], cookieNames: ['NID_AUT', 'NID_SES'] },
-  facebook: { url: 'https://www.facebook.com/?locale=ko_KR', uploadUrl: 'https://www.facebook.com/', cookieUrls: ['https://www.facebook.com'], cookieNames: ['c_user', 'xs'] }
-};
 
 app.setName('Upload Desk');
 if (process.platform === 'win32') app.setAppUserModelId('com.uploaddesk.desktop.v3');
@@ -30,43 +24,18 @@ function credentialsFile() { return path.join(app.getPath('userData'), 'secure',
 function readCredentialVault() { try { return JSON.parse(fs.readFileSync(credentialsFile(), 'utf8')); } catch { return { version: 1, providers: {} }; } }
 function writeCredentialVault(vault) { fs.mkdirSync(path.dirname(credentialsFile()), { recursive: true }); fs.writeFileSync(credentialsFile(), JSON.stringify(vault, null, 2), 'utf8'); }
 
-async function hasProviderAuthCookieInSession(authSession, provider) {
-  const config = AUTH_CONFIG[provider];
-  if (!config) return false;
-  for (const url of config.cookieUrls) {
-    try {
-      const cookies = await authSession.cookies.get({ url });
-      if (cookies.some((cookie) => config.cookieNames.includes(cookie.name) && String(cookie.value || '').length > 0)) return true;
-    } catch {}
-  }
-  return false;
-}
-
 async function hasProviderAuthCookie(authWindow, provider) {
   if (authWindow.isDestroyed()) return false;
   return hasProviderAuthCookieInSession(authWindow.webContents.session, provider);
 }
 
 async function clearProviderAuth(provider) {
-  const config = AUTH_CONFIG[provider];
-  if (!config) return { cleared: false, reason: 'unsupported' };
   const authSession = session.fromPartition('persist:upload-desk-auth');
-  let removed = 0;
-  for (const url of config.cookieUrls) {
-    try {
-      const cookies = await authSession.cookies.get({ url });
-      for (const cookie of cookies.filter((item) => config.cookieNames.includes(item.name))) {
-        const domain = String(cookie.domain || new URL(url).hostname).replace(/^\./, '');
-        const cookieUrl = `${cookie.secure ? 'https' : 'http'}://${domain}${cookie.path || '/'}`;
-        try { await authSession.cookies.remove(cookieUrl, cookie.name); removed += 1; } catch {}
-      }
-    } catch {}
-  }
-  return { cleared: true, removed };
+  return clearProviderAuthCookies(authSession, provider);
 }
 
 function verifyProviderLogin(provider) {
-  const config = AUTH_CONFIG[provider];
+  const config = getProviderConfig(provider);
   if (!config || !mainWindow) return Promise.resolve({ verified: false, reason: 'unsupported' });
   const active = activeAuthFlows.get(provider);
   if (active) {
@@ -94,13 +63,13 @@ function verifyProviderLogin(provider) {
     authWindow.webContents.on('did-navigate', check);
     authWindow.webContents.on('did-navigate-in-page', check);
     authWindow.on('closed', () => finish({ verified: false, cancelled: true, provider }));
-    authWindow.loadURL(config.url).catch(() => finish({ verified: false, provider, reason: 'load_failed' }));
+    authWindow.loadURL(config.loginUrl).catch(() => finish({ verified: false, provider, reason: 'load_failed' }));
   }
   return promise;
 }
 
 async function openProviderUpload(provider) {
-  const config = AUTH_CONFIG[provider];
+  const config = getProviderConfig(provider);
   if (!config?.uploadUrl || !mainWindow) return { opened: false, reason: 'unsupported' };
   const authSession = session.fromPartition('persist:upload-desk-auth');
   if (!await hasProviderAuthCookieInSession(authSession, provider)) return { opened: false, reason: 'login_required' };
@@ -207,7 +176,7 @@ function naverPageScript(step, payload = {}) {
 }
 
 async function runNaverClipAutomation(payload = {}) {
-  const config = AUTH_CONFIG.naver;
+  const config = getProviderConfig('naver');
   const authSession = session.fromPartition('persist:upload-desk-auth');
   if (!await hasProviderAuthCookieInSession(authSession, 'naver')) return { opened: false, reason: 'login_required' };
   const slots = Array.isArray(payload.slots) ? payload.slots.filter((item) => item?.storedName).slice(0, 10) : [];
