@@ -21,13 +21,40 @@ npm run start:desktop
 - 각 SNS 계정별 1~10 번호 체크 라우팅과 저장된 체크 상태
 - AI 제목·설명·해시태그 생성: `OPENAI_API_KEY`가 있으면 OpenAI adapter, 없거나 실패하면 로컬 규칙 기반 fallback
 - 업로드 파일명과 슬롯 번호를 사용한 자동 SVG 썸네일 생성
-- 계정×슬롯별 독립 job, 동시 sandbox 전송, 진행률·시도 횟수·상태·로그
+- 계정×슬롯별 독립 job, 진행률·시도 횟수·상태·로그
 - 중복 업로드 방지, 실패 시 1초→2초→4초 지수 백오프, 수동 재시도
 - 게시 후 mock 조회수·좋아요·댓글 통계, 댓글 답글·숨김·숨김 해제
 - 예약 캘린더, Windows 시작 프로그램/백그라운드 옵션, Electron Builder NSIS/portable 설정
 - `electron-updater` 기반 자동 업데이트 확인 지점
 
-현재 외부 SNS OAuth 자격 증명은 연결하지 않았습니다. `lib/providers.js`의 `ProviderAdapter`가 실제 API 연결 경계이며, 기본 구현은 sandbox 결과를 반환합니다.
+`lib/providers.js`의 `ProviderAdapter`가 실제 서비스 연결 경계입니다. 기본 모드는 안전한 sandbox이며, `live` 모드의 TikTok 작업은 `TikTokProviderAdapter`와 Playwright 브라우저 통합을 사용합니다. 네이버·Facebook·Instagram의 메인 어댑터는 아직 sandbox입니다.
+
+## TikTok 실제 게시 모드
+
+브라우저 엔진을 한 번 설치합니다.
+
+```powershell
+npm install
+npx playwright install chromium
+```
+
+실제 게시 모드로 실행합니다.
+
+```powershell
+$env:UPLOAD_DESK_PROVIDER_MODE="live"
+$env:UPLOAD_DESK_TIKTOK_PROFILE="E:\upload-desk-data\tiktok-profile"
+npm start
+```
+
+TikTok 작업을 처음 실행하면 영구 Chromium 창이 열립니다. 사용자가 직접 로그인하면 이후 세션이 `UPLOAD_DESK_TIKTOK_PROFILE`에 유지됩니다. 코드는 비밀번호, 인증 코드, 쿠키를 직접 입력하거나 읽지 않습니다.
+
+실제 게시 과정은 다음 조건을 모두 만족해야 성공으로 기록됩니다.
+
+- 로컬 MP4/WebM 파일이 TikTok Studio에 업로드됨
+- 게시 버튼이 활성화된 뒤 한 번만 클릭됨
+- 콘텐츠 목록에서 기존에 없던 `/video/{id}` URL이 확인됨
+
+게시 버튼 클릭 후 결과를 확인할 수 없거나 로그인·보안 확인이 필요한 경우 자동 재시도를 중단하여 중복 게시를 방지합니다. 성공한 작업의 `externalUrl`에 실제 TikTok 게시물 주소가 저장됩니다.
 
 ## 네이버 클립 브라우저 연동
 
@@ -75,4 +102,4 @@ NSIS 설치 프로그램과 portable EXE를 `dist/`에 만듭니다. 자동 업�
 npm test
 ```
 
-통합 테스트는 임시 저장소에서 슬롯 업로드, 라우팅, 중복 차단, sandbox 게시, 통계·댓글, 실패 후 재시도를 검증합니다.
+통합 테스트는 임시 저장소에서 슬롯 업로드, 라우팅, 중복 차단, sandbox 게시, 통계·댓글, 실패 후 재시도를 검증합니다. `tests/providers.test.js`는 live 모드에서 `TikTokProviderAdapter`가 선택되고 게시 URL이 작업 결과로 전달되는지 가짜 클라이언트로 검증합니다. 실제 계정 게시 테스트는 로그인된 브라우저와 명시적인 테스트 영상으로 별도 수행해야 합니다.

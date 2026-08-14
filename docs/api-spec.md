@@ -51,7 +51,7 @@ Base URL: `/api`. 모든 응답은 JSON이다.
 - `POST /comments/:id/reply` body `{ text }`
 - `PATCH /comments/:id` body `{ action: "hide" | "unhide" }`
 - `GET /logs?limit=80`
-- `GET /settings`, `PUT /settings` body `{ launchAtStartup, startMinimized, autoUpdate }`
+- `GET /settings`, `PUT /settings` body `{ launchAtStartup, startMinimized, autoUpdate, providerMode }`; `providerMode`은 `sandbox` 또는 `live`
 - `GET /health`
 
 ## 실제 API 연결 경계

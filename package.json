@@ -9,7 +9,7 @@
     "start:desktop": "electron .",
     "dist:desktop": "electron-builder --win nsis portable",
     "dist:installer": "electron-builder --win nsis",
-    "test": "node --test tests/server.test.js"
+    "test": "node --test tests/server.test.js tests/providers.test.js"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -17,7 +17,8 @@
   },
   "dependencies": {
     "electron-updater": "^6.3.9",
-    "naver-clip-integration": "file:integrations/naver-clip"
+    "naver-clip-integration": "file:integrations/naver-clip",
+    "tiktok-integration": "file:integrations/tiktok"
   },
   "build": {
     "appId": "com.uploaddesk.desktop.v3",
