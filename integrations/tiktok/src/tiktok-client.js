@@ -92,7 +92,7 @@ export class TikTokClient {
     return this.#waitForUploadUi(5_000);
   }
 
-  async ensureLoggedIn({ waitForManualLogin = true, manualTimeoutMs = 300_000 } = {}) {
+  async ensureLoggedIn({ waitForManualLogin = true, manualTimeoutMs = 900_000 } = {}) {
     if (await this.isLoggedIn()) return true;
     if (!waitForManualLogin) throw new TikTokLoginRequiredError();
 
