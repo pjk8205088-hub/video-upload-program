@@ -9,6 +9,7 @@ let mainWindow;
 let localServer;
 let autoUpdater;
 let activeNaverUploadWindow;
+const activeAuthFlows = new Map();
 
 const AUTH_CONFIG = {
   instagram: { url: 'https://www.instagram.com/accounts/login/', uploadUrl: 'https://www.instagram.com/', cookieUrls: ['https://www.instagram.com'], cookieNames: ['sessionid', 'ds_user_id'] },
@@ -67,14 +68,23 @@ async function clearProviderAuth(provider) {
 function verifyProviderLogin(provider) {
   const config = AUTH_CONFIG[provider];
   if (!config || !mainWindow) return Promise.resolve({ verified: false, reason: 'unsupported' });
-  return new Promise((resolve) => {
-    const authWindow = new BrowserWindow({ parent: mainWindow, width: 520, height: 820, minWidth: 420, minHeight: 640, title: `${provider} 공식 로그인`, autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: 'persist:upload-desk-auth' } });
+  const active = activeAuthFlows.get(provider);
+  if (active) {
+    if (!active.window.isDestroyed()) { active.window.show(); active.window.focus(); }
+    return active.promise;
+  }
+  let resolveFlow;
+  const promise = new Promise((resolve) => { resolveFlow = resolve; });
+  const authWindow = new BrowserWindow({ parent: mainWindow, width: 520, height: 820, minWidth: 420, minHeight: 640, title: `${provider} 공식 로그인`, autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: 'persist:upload-desk-auth' } });
+  activeAuthFlows.set(provider, { window: authWindow, promise });
+  {
     let finished = false;
     const finish = (result) => {
       if (finished) return;
       finished = true;
+      activeAuthFlows.delete(provider);
       if (!authWindow.isDestroyed()) authWindow.close();
-      resolve(result);
+      resolveFlow(result);
     };
     const check = async () => {
       if (finished || authWindow.isDestroyed()) return;
@@ -85,7 +95,8 @@ function verifyProviderLogin(provider) {
     authWindow.webContents.on('did-navigate-in-page', check);
     authWindow.on('closed', () => finish({ verified: false, cancelled: true, provider }));
     authWindow.loadURL(config.url).catch(() => finish({ verified: false, provider, reason: 'load_failed' }));
-  });
+  }
+  return promise;
 }
 
 async function openProviderUpload(provider) {

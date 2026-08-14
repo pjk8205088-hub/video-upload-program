@@ -35,6 +35,7 @@ function showToast(message, isError = false) { const toast = $('#toast'); toast.
 async function api(url, options = {}) { const response = await fetch(url, options); const payload = await response.json().catch(() => ({})); if (!response.ok) throw Object.assign(new Error(payload.error?.message || '요청을 처리하지 못했습니다.'), { payload, status: response.status }); return payload; }
 function loginProviderFor(key) { return loginProviders.find((item) => item.key === key); }
 function isAuthenticatedAccount(account) { return account?.status === 'connected' && account.authVerified === true; }
+function connectedAccountsFor(providerKey) { const account = state.accounts.find((item) => item.provider === providerKey && isAuthenticatedAccount(item)); return account ? [account] : []; }
 function hasLoginPrerequisite(providerKey) { const provider = loginProviderFor(providerKey); return !provider?.requiresProvider || state.accounts.some((account) => account.provider === provider.requiresProvider && isAuthenticatedAccount(account)); }
 function requireLoginPrerequisite(providerKey) { const provider = loginProviderFor(providerKey); if (!provider?.requiresProvider || hasLoginPrerequisite(providerKey)) return true; const prerequisite = providerFor(provider.requiresProvider); showToast(`${provider.label}은(는) ${prerequisite.label} 로그인 후 진행할 수 있습니다.`, true); document.querySelector(`#login-${provider.requiresProvider}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return false; }
 
@@ -46,7 +47,7 @@ function renderQuickPublish() {
   if (!target) return;
   const selectedVideo = videoForSlot(state.selectedSlot);
   target.innerHTML = loginProviders.map((item) => {
-    const linked = state.accounts.filter((account) => account.provider === item.key && account.status === 'connected' && account.authVerified === true);
+    const linked = connectedAccountsFor(item.key);
     const pending = state.accounts.filter((account) => account.provider === item.key && !(account.status === 'connected' && account.authVerified === true));
     const loginState = state.loginStates[item.key] || 'idle';
     const active = linked.some((account) => (account.slotNumbers || []).includes(state.selectedSlot));
@@ -199,7 +200,7 @@ function renderSidebarStatus() {
   const target = document.querySelector('.status-inline-row');
   if (!target) return;
   const rows = loginProviders.map((item) => {
-    const linkedAccounts = state.accounts.filter((account) => account.provider === item.key && isAuthenticatedAccount(account));
+    const linkedAccounts = connectedAccountsFor(item.key);
     const loggedIn = linkedAccounts.length > 0;
     const uploadReady = loggedIn && Boolean(videoForSlot(state.selectedSlot)) && linkedAccounts.some((account) => (account.slotNumbers || []).includes(state.selectedSlot));
     const light = (ready) => `<i class="status-check-light${ready ? ' is-ready' : ' is-waiting'}"></i>`;
@@ -215,7 +216,7 @@ function renderSidebarStatus() {
   const target = document.querySelector('.status-inline-row');
   if (!target) return;
   target.innerHTML = loginProviders.map((item) => {
-    const linkedAccounts = state.accounts.filter((account) => account.provider === item.key && isAuthenticatedAccount(account));
+    const linkedAccounts = connectedAccountsFor(item.key);
     const loggedIn = linkedAccounts.length > 0;
     const uploadReady = loggedIn && Boolean(videoForSlot(state.selectedSlot)) && linkedAccounts.some((account) => (account.slotNumbers || []).includes(state.selectedSlot));
     const chip = (label, ready) => `<span class="status-state-chip${ready ? ' is-ready' : ' is-waiting'}"><i class="status-check-light${ready ? ' is-ready' : ' is-waiting'}"></i>${label}<b>${ready ? 'GREEN' : 'RED'}</b></span>`;
@@ -227,7 +228,7 @@ function renderQuickPublish() {
   const target = $('#quickProviderBar');
   if (!target) return;
   target.innerHTML = loginProviders.map((item) => {
-    const linked = state.accounts.filter((account) => account.provider === item.key && isAuthenticatedAccount(account));
+    const linked = connectedAccountsFor(item.key);
     const loggedIn = linked.length > 0;
     const active = linked.some((account) => (account.slotNumbers || []).includes(state.selectedSlot));
     const slots = Array.from({ length: 10 }, (_, index) => {
@@ -303,9 +304,9 @@ function renderAccounts() {
     const verified = account.status === 'connected' && account.authVerified === true;
     const canUpload = verified && routedVideos.length > 0;
     const uploadTitle = !verified ? '공식 로그인 확인이 필요합니다' : routedVideos.length ? `${routedVideos.length}개 영상을 즉시 업로드` : '계정에 업로드할 영상을 먼저 선택해 주세요';
-    const accountActionLabel = account.provider === 'naver' ? '클립 자동 등록' : '동영상 올리기';
+    const accountActionLabel = '바로 업로드';
     const accountStatus = verified ? 'CONNECTED' : account.status === 'login_failed' ? 'LOGIN FAILED' : 'LOGIN REQUIRED';
-    return `<article class="account-card provider-${account.provider}${verified ? '' : ' is-auth-pending'}"><div class="account-head"><span class="provider-code">${provider.code}</span><div><strong>${escapeHtml(account.displayName)}</strong><small>${provider.label} · ${escapeHtml(account.handle)}</small></div><span class="connected-dot${verified ? '' : ' is-auth-pending'}">●</span><button class="account-upload-button" data-upload-account="${escapeHtml(account.id)}" type="button" ${canUpload ? '' : 'disabled'} title="${uploadTitle}">${accountActionLabel}</button></div><div class="account-route-label"><span>게시할 번호</span><b>${checkedCount}개</b><em class="account-status-label${verified ? ' is-connected' : ''}">${accountStatus}</em></div>${videoPreviews}<div class="slot-switches">${switches}</div><div class="account-footer"><span>${verified ? 'OAUTH CONNECTED' : 'LOGIN VERIFICATION REQUIRED'}</span><button class="text-button" data-remove-account="${escapeHtml(account.id)}" type="button">연결 해제</button></div></article>`;
+    return `<article class="account-card provider-${account.provider}${verified ? '' : ' is-auth-pending'}"><div class="account-head"><span class="provider-code">${provider.code}</span><div class="account-identity"><strong>${escapeHtml(account.displayName)}</strong><div class="account-handle-row"><small>${provider.label} · ${escapeHtml(account.handle)}</small><button class="account-upload-button" data-upload-account="${escapeHtml(account.id)}" type="button" ${canUpload ? '' : 'disabled'} title="${uploadTitle}">${accountActionLabel}</button><button class="account-connect-button" data-connect-account-provider="${escapeHtml(account.provider)}" type="button" title="${provider.label} 연결">연결</button></div></div><span class="connected-dot${verified ? '' : ' is-auth-pending'}">●</span></div><div class="account-route-label"><span>게시할 번호</span><b>${checkedCount}개</b><em class="account-status-label${verified ? ' is-connected' : ''}">${accountStatus}</em></div>${videoPreviews}<div class="slot-switches">${switches}</div><div class="account-footer"><span>${verified ? 'OAUTH CONNECTED' : 'LOGIN VERIFICATION REQUIRED'}</span><button class="text-button" data-remove-account="${escapeHtml(account.id)}" type="button">연결 해제</button></div></article>`;
   }).join('');
   renderRouteSummary();
 }
@@ -314,7 +315,7 @@ function renderLoginPages() {
   const target = $('#loginPageGrid');
   if (!target) return;
   target.innerHTML = loginProviders.map((item, index) => {
-    const linked = state.accounts.filter((account) => account.provider === item.key && isAuthenticatedAccount(account));
+    const linked = connectedAccountsFor(item.key);
     const prerequisite = item.requiresProvider ? providerFor(item.requiresProvider) : null;
     const prerequisiteReady = hasLoginPrerequisite(item.key);
     const prerequisiteNotice = prerequisite ? `<div class="login-prerequisite${prerequisiteReady ? ' is-ready' : ' is-blocked'}"><span class="login-prerequisite-light"></span><span>${prerequisite.label} 로그인 ${prerequisiteReady ? '완료' : '필요'}</span>${prerequisiteReady ? '' : `<a href="#login-${item.requiresProvider}" data-scroll-target="#login-${item.requiresProvider}">${prerequisite.label} 로그인으로 이동</a>`}</div>` : '';
@@ -571,7 +572,7 @@ async function uploadNaverClipAccountVideos(accountId, clipOverride = null) {
   } catch (error) { showToast(error.message, true); }
 }
 
-function openAccountModal(providerKey = 'instagram') { const provider = providerFor(providerKey); $('#accountProvider').value = providerKey; $('#accountModalEyebrow').textContent = `${provider.code} / OAUTH LOGIN`; $('#accountModalTitle').textContent = `${provider.label} 로그인 확인`; $('#accountModalDescription').textContent = '공식 로그인 창에서 인증이 성공해야 CONNECTED로 표시됩니다. 실패하거나 취소하면 빨간 상태로 남습니다.'; $('#accountModal').hidden = false; $('#accountDisplayName').value = ''; $('#accountHandle').value = ''; $('#accountPassword').value = ''; $('#accountDisplayName').focus(); }
+function openAccountModal(providerKey = 'instagram') { const provider = providerFor(providerKey); if (providerKey === 'naver' && state.accounts.some((account) => account.provider === 'naver' && isAuthenticatedAccount(account))) { showToast('네이버 계정은 이미 로그인되어 있습니다. 기존 계정 하나만 사용합니다.'); document.querySelector('#login-naver')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return false; } $('#accountProvider').value = providerKey; $('#accountModalEyebrow').textContent = `${provider.code} / OAUTH LOGIN`; $('#accountModalTitle').textContent = `${provider.label} 로그인 확인`; $('#accountModalDescription').textContent = '공식 로그인 창에서 인증이 성공해야 CONNECTED로 표시됩니다. 실패하거나 취소하면 빨간 상태로 남습니다.'; $('#accountModal').hidden = false; $('#accountDisplayName').value = ''; $('#accountHandle').value = ''; $('#accountPassword').value = ''; $('#accountDisplayName').focus(); return true; }
 function closeAccountModal() { $('#accountModal').hidden = true; }
 
 async function fillRememberedCredentials(providerKey) {
@@ -593,7 +594,7 @@ async function fillRememberedCredentials(providerKey) {
 
 const openAccountModalBase = openAccountModal;
 openAccountModal = async function openAccountModalWithMemory(providerKey = 'instagram') {
-  openAccountModalBase(providerKey);
+  if (openAccountModalBase(providerKey) === false) return;
   $('#accountModalDescription').textContent = `${providerFor(providerKey).label} 공식 로그인 창에서 인증을 완료해야 연결됩니다. 비밀번호는 서버에 보내지 않고 이 PC의 암호화 저장소에만 기억합니다.`;
   $('#rememberAccount').checked = true;
   await fillRememberedCredentials(providerKey);
@@ -620,7 +621,7 @@ async function saveAccountWithCredentials(event) {
     if (window.desktopWindow?.saveCredentials) {
       try { await window.desktopWindow.saveCredentials({ provider, displayName, handle, password, remember }); } catch {}
     }
-    state.accounts = [result.account, ...state.accounts.filter((item) => item.id !== result.account.id)];
+    state.accounts = [result.account, ...state.accounts.filter((item) => item.id !== result.account.id && item.provider !== result.account.provider)];
     state.loginStates[provider] = 'connected';
     state.pendingQuickProvider = '';
     const selectedVideo = videoForSlot(state.selectedSlot);
@@ -665,6 +666,7 @@ document.addEventListener('click', (event) => {
   if (target.dataset.quickSlotProvider && requireLoginPrerequisite(target.dataset.quickSlotProvider)) toggleQuickProviderSlot(target.dataset.quickSlotProvider, target.dataset.slotNumber);
   if (target.dataset.loginProvider && requireLoginPrerequisite(target.dataset.loginProvider)) openAccountModal(target.dataset.loginProvider);
   if (target.dataset.openAccount || target.id === 'openAccountButton') openAccountModal();
+  if (target.dataset.connectAccountProvider && requireLoginPrerequisite(target.dataset.connectAccountProvider)) openAccountModal(target.dataset.connectAccountProvider);
   if (target.dataset.uploadAccount) { const account = state.accounts.find((item) => item.id === target.dataset.uploadAccount); if (account?.provider === 'naver') uploadNaverClipAccountVideos(target.dataset.uploadAccount); else uploadAccountVideos(target.dataset.uploadAccount, null, '업로드'); }
   if (target.id === 'registerNaverClipButton') registerNaverClip();
   if (target.id === 'publishInstagramButton') publishInstagram();

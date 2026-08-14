@@ -97,7 +97,7 @@ async function readAccounts(store) {
   const normalized = [];
   let changed = false;
   for (const account of accounts) {
-    const key = `${account.provider}:${normalizedHandle(account.handle)}`;
+    const key = `${account.provider}:single-account`;
     if (seen.has(key)) {
       const existing = seen.get(key);
       existing.slotNumbers = [...new Set([...(existing.slotNumbers || []), ...(account.slotNumbers || [])])].sort((a, b) => a - b);
@@ -316,7 +316,7 @@ async function createAccount(store, req, res) {
   const accounts = await readAccounts(store);
   if (provider === 'tiktok' && !accounts.some((account) => account.provider === 'facebook' && account.status === 'connected' && account.authVerified === true)) return sendError(res, 400, 'TikTok은 Facebook 로그인 후 연결할 수 있습니다.', 'FACEBOOK_LOGIN_REQUIRED');
   if (body.authVerified !== true) return sendError(res, 401, '공식 로그인에 성공한 뒤 계정을 연결해 주세요.', 'ACCOUNT_AUTH_REQUIRED');
-  const existing = accounts.find((account) => account.provider === provider && normalizedHandle(account.handle) === normalizedHandle(handle));
+  const existing = accounts.find((account) => account.provider === provider);
   if (existing) {
     existing.displayName = displayName;
     existing.handle = handle;

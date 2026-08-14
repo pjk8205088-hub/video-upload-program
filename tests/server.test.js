@@ -77,6 +77,25 @@ test('verified accounts cannot be duplicated by the same provider and handle', a
   assert.equal(accounts.payload.accounts.filter((account) => account.provider === 'naver').length, 1);
 }));
 
+test('each SNS keeps one account even when a second login uses a different handle', async () => withServer(async (base) => {
+  const first = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'naver', displayName: '네이버 클립', handle: 'pjk820508', authVerified: true }) });
+  await json(base, `/api/accounts/${first.payload.account.id}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: [1, 3] }) });
+  const second = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'naver', displayName: '네이버 클립 재로그인', handle: 'another-input', authVerified: true }) });
+  const accounts = await json(base, '/api/accounts');
+  assert.equal(second.response.status, 200);
+  assert.equal(second.payload.existing, true);
+  assert.equal(accounts.payload.accounts.filter((account) => account.provider === 'naver').length, 1);
+  assert.deepEqual(accounts.payload.accounts[0].slotNumbers, [1, 3]);
+  assert.equal(accounts.payload.accounts[0].handle, 'another-input');
+
+  const instagram = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'instagram', displayName: 'Instagram', handle: 'first-handle', authVerified: true }) });
+  const instagramAgain = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'instagram', displayName: 'Instagram 재로그인', handle: 'second-handle', authVerified: true }) });
+  const allAccounts = await json(base, '/api/accounts');
+  assert.equal(instagramAgain.response.status, 200);
+  assert.equal(instagramAgain.payload.account.id, instagram.payload.account.id);
+  assert.equal(allAccounts.payload.accounts.filter((account) => account.provider === 'instagram').length, 1);
+}));
+
 async function withServer(callback) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'upload-desk-'));
   const store = createStore(root);
