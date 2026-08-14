@@ -29,6 +29,38 @@ npm run start:desktop
 
 현재 외부 SNS OAuth 자격 증명은 연결하지 않았습니다. `lib/providers.js`의 `ProviderAdapter`가 실제 API 연결 경계이며, 기본 구현은 sandbox 결과를 반환합니다.
 
+## 네이버 클립 브라우저 연동
+
+`integrations/naver-clip`에는 네이버 클립 로그인 확인, 다중 영상 업로드, 카테고리·공개 설정, 최종 등록 확인을 담당하는 독립 모듈이 포함되어 있습니다. 루트 패키지의 로컬 의존성으로 연결되어 있으므로 설치 후 CommonJS 코드에서는 동적 import로 사용할 수 있습니다.
+
+```bash
+npm install
+npx playwright install chromium
+```
+
+```js
+const { NaverClipClient } = await import('naver-clip-integration');
+
+const client = new NaverClipClient({
+  userDataDir: '.naver-clip-browser',
+  headless: false
+});
+
+await client.start();
+const result = await client.uploadVideos({
+  finalize: true,
+  videos: [{
+    filePath: 'H:\\대전 동영상\\1.mp4',
+    caption: '치어리더 공연 영상 1',
+    category: ['프로스포츠', '야구'],
+    visibility: 'public'
+  }]
+});
+await client.close();
+```
+
+처음 실행할 때 열린 브라우저에서 사용자가 직접 로그인합니다. 비밀번호, 인증번호, 쿠키는 코드에 저장하지 않습니다. 카테고리는 실행하는 프로젝트가 명시적으로 전달해야 하며 `finalize: true`이면 최종 등록까지 진행합니다.
+
 ## 빌드
 
 ```bash
