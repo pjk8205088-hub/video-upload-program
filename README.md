@@ -27,7 +27,7 @@ npm run start:desktop
 - 예약 캘린더, Windows 시작 프로그램/백그라운드 옵션, Electron Builder NSIS/portable 설정
 - `electron-updater` 기반 자동 업데이트 확인 지점
 
-`lib/providers.js`의 `ProviderAdapter`가 실제 서비스 연결 경계입니다. 기본 모드는 안전한 sandbox이며, `live` 모드의 TikTok 작업은 `TikTokProviderAdapter`와 Playwright 브라우저 통합을 사용합니다. 네이버·Facebook·Instagram의 메인 어댑터는 아직 sandbox입니다.
+`lib/providers.js`의 `ProviderAdapter`가 실제 서비스 연결 경계입니다. 기본 모드는 안전한 sandbox이며, `live` 모드의 TikTok·Instagram·네이버 클립·Facebook 작업은 각각 Playwright 브라우저 통합을 사용합니다.
 
 ## TikTok 실제 게시 모드
 
@@ -56,6 +56,30 @@ TikTok 작업을 처음 실행하면 영구 Chromium 창이 열립니다. 사용
 
 게시 버튼 클릭 후 결과를 확인할 수 없거나 로그인·보안 확인이 필요한 경우 자동 재시도를 중단하여 중복 게시를 방지합니다. 성공한 작업의 `externalUrl`에 실제 TikTok 게시물 주소가 저장됩니다.
 
+## Instagram 릴스 실제 게시 모드
+
+Instagram도 Playwright 영구 브라우저 프로필을 사용합니다. 첫 실행 시 열린 Instagram 창에서 직접 로그인하고, 비밀번호·인증 코드·쿠키는 코드에 저장하지 않습니다.
+
+```powershell
+$env:UPLOAD_DESK_PROVIDER_MODE="live"
+$env:UPLOAD_DESK_INSTAGRAM_PROFILE="E:\upload-desk-data\instagram-profile"
+npm run start:desktop
+```
+
+Instagram 계정의 저장된 핸들을 기준으로 게시 후 새 `/reel/{id}` 주소를 확인한 경우에만 성공으로 기록합니다. 릴스 캡션과 해시태그는 프로그램의 Instagram 설정에서 생성한 값을 사용합니다.
+
+## Facebook 동영상 실제 게시 모드
+
+Facebook 페이지 핸들을 계정에 저장하면 해당 페이지의 동영상 게시 화면을 열고, 캡션·해시태그를 입력한 뒤 새 동영상 주소를 확인합니다. 첫 실행 시 열린 Facebook 창에서 직접 로그인하며 비밀번호·인증 코드·쿠키는 코드에 저장하지 않습니다.
+
+```powershell
+$env:UPLOAD_DESK_PROVIDER_MODE="live"
+$env:UPLOAD_DESK_FACEBOOK_PROFILE="E:\upload-desk-data\facebook-profile"
+npm run start:desktop
+```
+
+Facebook 페이지 권한이나 보안 확인이 필요한 경우 자동 게시를 중단하고 열린 브라우저에서 사용자가 확인하도록 처리합니다.
+
 ## 네이버 클립 브라우저 연동
 
 `integrations/naver-clip`에는 네이버 클립 로그인 확인, 다중 영상 업로드, 카테고리·공개 설정, 최종 등록 확인을 담당하는 독립 모듈이 포함되어 있습니다. 루트 패키지의 로컬 의존성으로 연결되어 있으므로 설치 후 CommonJS 코드에서는 동적 import로 사용할 수 있습니다.
@@ -80,6 +104,7 @@ const result = await client.uploadVideos({
     filePath: 'H:\\대전 동영상\\1.mp4',
     caption: '치어리더 공연 영상 1',
     category: ['프로스포츠', '야구'],
+    infoTag: '쇼핑',
     visibility: 'public'
   }]
 });
@@ -87,6 +112,16 @@ await client.close();
 ```
 
 처음 실행할 때 열린 브라우저에서 사용자가 직접 로그인합니다. 비밀번호, 인증번호, 쿠키는 코드에 저장하지 않습니다. 카테고리는 실행하는 프로젝트가 명시적으로 전달해야 하며 `finalize: true`이면 최종 등록까지 진행합니다.
+
+예약 작업을 네이버 클립에 실제 등록하려면 live 모드와 영구 프로필 경로를 지정합니다.
+
+```powershell
+$env:UPLOAD_DESK_PROVIDER_MODE="live"
+$env:UPLOAD_DESK_NAVER_PROFILE="E:\upload-desk-data\naver-clip-profile"
+npm run start:desktop
+```
+
+첫 실행 시 네이버 클립 브라우저 창에서 직접 로그인하고 클립 프로필·약관을 완료하면, 이후 로그인 세션은 지정한 프로필에 유지됩니다. 정보태그는 기본값으로 `쇼핑`을 사용합니다.
 
 ## 빌드
 
@@ -102,4 +137,4 @@ NSIS 설치 프로그램과 portable EXE를 `dist/`에 만듭니다. 자동 업�
 npm test
 ```
 
-통합 테스트는 임시 저장소에서 슬롯 업로드, 라우팅, 중복 차단, sandbox 게시, 통계·댓글, 실패 후 재시도를 검증합니다. `tests/providers.test.js`는 live 모드에서 `TikTokProviderAdapter`가 선택되고 게시 URL이 작업 결과로 전달되는지 가짜 클라이언트로 검증합니다. 실제 계정 게시 테스트는 로그인된 브라우저와 명시적인 테스트 영상으로 별도 수행해야 합니다.
+통합 테스트는 임시 저장소에서 슬롯 업로드, 라우팅, 중복 차단, sandbox 게시, 통계·댓글, 실패 후 재시도를 검증합니다. `tests/providers.test.js`는 live 모드에서 TikTok·Instagram·네이버 클립·Facebook 어댑터가 선택되고 게시 URL이 작업 결과로 전달되는지 가짜 클라이언트로 검증합니다. 실제 계정 게시 테스트는 로그인된 브라우저와 명시적인 테스트 영상으로 별도 수행해야 합니다.

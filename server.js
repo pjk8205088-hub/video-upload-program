@@ -119,6 +119,9 @@ function providerOptions(store, settings, mode = settings.providerMode) {
   return {
     mode,
     userDataDir: process.env.UPLOAD_DESK_TIKTOK_PROFILE || path.join(store.root, '.tiktok-browser'),
+    naverUserDataDir: process.env.UPLOAD_DESK_NAVER_PROFILE || path.join(store.root, '.naver-clip-browser'),
+    instagramUserDataDir: process.env.UPLOAD_DESK_INSTAGRAM_PROFILE || path.join(store.root, '.instagram-browser'),
+    facebookUserDataDir: process.env.UPLOAD_DESK_FACEBOOK_PROFILE || path.join(store.root, '.facebook-browser'),
     headless: false
   };
 }

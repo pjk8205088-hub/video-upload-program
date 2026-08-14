@@ -171,6 +171,7 @@ export class NaverClipClient {
     await captionBox.fill(video.caption);
 
     await this.#chooseCategory(video.category);
+    if (video.infoTag) await this.#chooseInfoTag(video.infoTag);
     await this.#setVisibility(video.visibility);
     await this.page.getByRole("button", { name: "등록", exact: true }).click();
 
@@ -241,6 +242,27 @@ export class NaverClipClient {
     }
   }
 
+  async #chooseInfoTag(infoTag) {
+    const tag = String(infoTag || '').trim();
+    if (!tag) return;
+
+    const directButton = this.page.getByRole('button', { name: tag, exact: true }).last();
+    if (await directButton.isVisible().catch(() => false)) {
+      await directButton.click();
+    } else {
+      const trigger = this.page.getByText(tag, { exact: true }).last();
+      if (!(await trigger.isVisible().catch(() => false))) {
+        throw new Error(`네이버 클립 정보태그를 찾지 못했습니다: ${tag}`);
+      }
+      await trigger.click();
+    }
+
+    const confirm = this.page.getByRole('button', { name: '선택', exact: true }).last();
+    if (await confirm.isVisible().catch(() => false)) await confirm.click();
+    const close = this.page.getByRole('button', { name: /닫기|×/ }).last();
+    if (await close.isVisible().catch(() => false)) await close.click();
+  }
+
   async #setVisibility(visibility) {
     if (visibility === "current") return;
 
@@ -274,6 +296,7 @@ export class NaverClipClient {
         draftName,
         caption,
         category: video.category ?? [],
+        infoTag: video.infoTag ?? '',
         visibility: video.visibility ?? "current"
       };
     });

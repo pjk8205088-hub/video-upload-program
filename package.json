@@ -22,6 +22,8 @@
   },
   "dependencies": {
     "electron-updater": "^6.3.9",
+    "facebook-integration": "file:integrations/facebook",
+    "instagram-integration": "file:integrations/instagram",
     "naver-clip-integration": "file:integrations/naver-clip",
     "tiktok-integration": "file:integrations/tiktok"
   },
@@ -29,7 +31,7 @@
     "appId": "com.uploaddesk.desktop.v3",
     "productName": "동영상 업로드 프로그램",
     "asar": true,
-    "files": ["desktop/**/*", "public/**/*", "lib/**/*", "server.js", "package.json"],
+    "files": ["desktop/**/*", "public/**/*", "lib/**/*", "integrations/**/*", "server.js", "package.json"],
     "directories": { "output": "dist" },
     "win": { "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }], "signAndEditExecutable": false },
     "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "runAfterFinish": true },
