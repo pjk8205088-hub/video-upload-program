@@ -16,6 +16,7 @@
     "electron-builder": "^24.13.3"
   },
   "dependencies": {
+    "facebook-integration": "file:integrations/facebook",
     "electron-updater": "^6.3.9",
     "naver-clip-integration": "file:integrations/naver-clip",
     "tiktok-integration": "file:integrations/tiktok"

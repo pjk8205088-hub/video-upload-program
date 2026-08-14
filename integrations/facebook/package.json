@@ -1,0 +1,19 @@
+{
+  "name": "facebook-integration",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reusable Facebook personal-profile video post integration",
+  "main": "src/index.js",
+  "exports": "./src/index.js",
+  "scripts": {
+    "example": "node examples/upload.mjs",
+    "check": "node --check src/index.js && node --check src/facebook-client.js && node --check examples/upload.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.55.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
