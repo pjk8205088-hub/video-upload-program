@@ -1,0 +1,4 @@
+node_modules/
+.naver-clip-browser/
+playwright-report/
+test-results/
