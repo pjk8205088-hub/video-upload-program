@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { clearProviderAuthCookies, hasProviderAuthCookieInSession, normalizeAccounts, upsertVerifiedAccount } = require('../lib/auth');
+const { clearProviderAuthCookies, hasProviderAuthCookieInSession, restoreProviderAuthSessions, normalizeAccounts, upsertVerifiedAccount } = require('../lib/auth');
 
 function fakeSession(cookieMap) {
   const removed = [];
@@ -17,6 +17,21 @@ test('headless auth verifies a provider cookie without Electron or UI', async ()
   const session = fakeSession({ 'https://nid.naver.com': [{ name: 'NID_SES', value: 'verified-session', domain: '.nid.naver.com', path: '/', secure: true }] });
   assert.equal(await hasProviderAuthCookieInSession(session, 'naver'), true);
   assert.equal(await hasProviderAuthCookieInSession(fakeSession({}), 'naver'), false);
+});
+
+test('headless auth restores all four provider sessions together', async () => {
+  const session = fakeSession({
+    'https://www.instagram.com': [{ name: 'sessionid', value: 'instagram-session' }],
+    'https://www.tiktok.com': [{ name: 'sid_tt', value: 'tiktok-session' }],
+    'https://nid.naver.com': [{ name: 'NID_AUT', value: 'naver-session' }],
+    'https://www.facebook.com': [{ name: 'c_user', value: 'facebook-session' }]
+  });
+  const restored = await restoreProviderAuthSessions(session);
+  assert.deepEqual(Object.keys(restored).sort(), ['facebook', 'instagram', 'naver', 'tiktok']);
+  assert.equal(restored.instagram.verified, true);
+  assert.equal(restored.tiktok.verified, true);
+  assert.equal(restored.naver.verified, true);
+  assert.equal(restored.facebook.verified, true);
 });
 
 test('headless auth clears only the selected provider cookies', async () => {

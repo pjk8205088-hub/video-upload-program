@@ -2,7 +2,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, session } = require('electron');
-const { getProviderConfig, hasProviderAuthCookieInSession, clearProviderAuthCookies } = require('../lib/auth');
+const { PROVIDER_KEYS, getProviderConfig, hasProviderAuthCookieInSession, restoreProviderAuthSessions, clearProviderAuthCookies } = require('../lib/auth');
 
 let createServer;
 let ensureStorage;
@@ -11,6 +11,7 @@ let localServer;
 let autoUpdater;
 let activeNaverUploadWindow;
 const activeAuthFlows = new Map();
+const AUTH_PARTITION = 'persist:upload-desk-auth';
 
 app.setName('Upload Desk');
 if (process.platform === 'win32') app.setAppUserModelId('com.uploaddesk.desktop.v3');
@@ -21,8 +22,25 @@ if (!hasAppLock) app.quit();
 function settingsFile() { return path.join(app.getPath('userData'), 'storage', 'data', 'settings.json'); }
 function readSettings() { try { return JSON.parse(fs.readFileSync(settingsFile(), 'utf8')); } catch { return { launchAtStartup: false, startMinimized: false, autoUpdate: true }; } }
 function credentialsFile() { return path.join(app.getPath('userData'), 'secure', 'login-credentials.json'); }
-function readCredentialVault() { try { return JSON.parse(fs.readFileSync(credentialsFile(), 'utf8')); } catch { return { version: 1, providers: {} }; } }
-function writeCredentialVault(vault) { fs.mkdirSync(path.dirname(credentialsFile()), { recursive: true }); fs.writeFileSync(credentialsFile(), JSON.stringify(vault, null, 2), 'utf8'); }
+function emptyCredentialVault() { return { version: 2, providers: {} }; }
+function readCredentialVault() {
+  try {
+    const vault = JSON.parse(fs.readFileSync(credentialsFile(), 'utf8'));
+    return { ...emptyCredentialVault(), ...vault, providers: vault?.providers && typeof vault.providers === 'object' ? vault.providers : {} };
+  } catch { return emptyCredentialVault(); }
+}
+function writeCredentialVault(vault) {
+  fs.mkdirSync(path.dirname(credentialsFile()), { recursive: true });
+  fs.writeFileSync(credentialsFile(), JSON.stringify({ ...vault, version: 2, updatedAt: new Date().toISOString() }, null, 2), 'utf8');
+}
+function authSession() { return session.fromPartition(AUTH_PARTITION); }
+async function flushAuthSession(authSessionToFlush = authSession()) {
+  const tasks = [];
+  if (authSessionToFlush?.cookies?.flushStore) tasks.push(Promise.resolve(authSessionToFlush.cookies.flushStore()));
+  if (authSessionToFlush?.flushStorageData) tasks.push(Promise.resolve(authSessionToFlush.flushStorageData()));
+  await Promise.allSettled(tasks);
+  return { persisted: true };
+}
 
 async function hasProviderAuthCookie(authWindow, provider) {
   if (authWindow.isDestroyed()) return false;
@@ -30,8 +48,10 @@ async function hasProviderAuthCookie(authWindow, provider) {
 }
 
 async function clearProviderAuth(provider) {
-  const authSession = session.fromPartition('persist:upload-desk-auth');
-  return clearProviderAuthCookies(authSession, provider);
+  const currentAuthSession = authSession();
+  const result = await clearProviderAuthCookies(currentAuthSession, provider);
+  await flushAuthSession(currentAuthSession);
+  return result;
 }
 
 function verifyProviderLogin(provider) {
@@ -44,7 +64,7 @@ function verifyProviderLogin(provider) {
   }
   let resolveFlow;
   const promise = new Promise((resolve) => { resolveFlow = resolve; });
-  const authWindow = new BrowserWindow({ parent: mainWindow, width: 520, height: 820, minWidth: 420, minHeight: 640, title: `${provider} 공식 로그인`, autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: 'persist:upload-desk-auth' } });
+  const authWindow = new BrowserWindow({ parent: mainWindow, width: 520, height: 820, minWidth: 420, minHeight: 640, title: `${provider} 공식 로그인`, autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: AUTH_PARTITION } });
   activeAuthFlows.set(provider, { window: authWindow, promise });
   {
     let finished = false;
@@ -57,7 +77,10 @@ function verifyProviderLogin(provider) {
     };
     const check = async () => {
       if (finished || authWindow.isDestroyed()) return;
-      if (await hasProviderAuthCookie(authWindow, provider)) finish({ verified: true, provider });
+      if (await hasProviderAuthCookie(authWindow, provider)) {
+        await flushAuthSession(authWindow.webContents.session);
+        finish({ verified: true, provider, persisted: true });
+      }
     };
     authWindow.webContents.on('did-finish-load', check);
     authWindow.webContents.on('did-navigate', check);
@@ -71,9 +94,9 @@ function verifyProviderLogin(provider) {
 async function openProviderUpload(provider) {
   const config = getProviderConfig(provider);
   if (!config?.uploadUrl || !mainWindow) return { opened: false, reason: 'unsupported' };
-  const authSession = session.fromPartition('persist:upload-desk-auth');
-  if (!await hasProviderAuthCookieInSession(authSession, provider)) return { opened: false, reason: 'login_required' };
-  const uploadWindow = new BrowserWindow({ parent: mainWindow, width: 1440, height: 920, minWidth: 1080, minHeight: 720, title: `${provider} 동영상 업로드`, autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: 'persist:upload-desk-auth' } });
+  const currentAuthSession = authSession();
+  if (!await hasProviderAuthCookieInSession(currentAuthSession, provider)) return { opened: false, reason: 'login_required' };
+  const uploadWindow = new BrowserWindow({ parent: mainWindow, width: 1440, height: 920, minWidth: 1080, minHeight: 720, title: `${provider} 동영상 업로드`, autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: AUTH_PARTITION } });
   try {
     await uploadWindow.loadURL(config.uploadUrl);
     return { opened: true, provider, url: config.uploadUrl };
@@ -177,12 +200,12 @@ function naverPageScript(step, payload = {}) {
 
 async function runNaverClipAutomation(payload = {}) {
   const config = getProviderConfig('naver');
-  const authSession = session.fromPartition('persist:upload-desk-auth');
-  if (!await hasProviderAuthCookieInSession(authSession, 'naver')) return { opened: false, reason: 'login_required' };
+  const currentAuthSession = authSession();
+  if (!await hasProviderAuthCookieInSession(currentAuthSession, 'naver')) return { opened: false, reason: 'login_required' };
   const slots = Array.isArray(payload.slots) ? payload.slots.filter((item) => item?.storedName).slice(0, 10) : [];
   if (!slots.length) return { opened: false, reason: 'no_videos' };
   if (activeNaverUploadWindow && !activeNaverUploadWindow.isDestroyed()) activeNaverUploadWindow.close();
-  const uploadWindow = new BrowserWindow({ parent: mainWindow, width: 1440, height: 920, minWidth: 1080, minHeight: 720, title: '네이버 클립 자동 등록', autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: 'persist:upload-desk-auth' } });
+  const uploadWindow = new BrowserWindow({ parent: mainWindow, width: 1440, height: 920, minWidth: 1080, minHeight: 720, title: '네이버 클립 자동 등록', autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: AUTH_PARTITION } });
   activeNaverUploadWindow = uploadWindow;
   const publishedSlots = [];
   try {
@@ -233,6 +256,18 @@ function registerIpc() {
     try { await autoUpdater.checkForUpdatesAndNotify(); return { status: 'checked' }; } catch (error) { return { status: 'error', message: error.message }; }
   });
   ipcMain.handle('auth:verify-login', (_event, provider) => verifyProviderLogin(String(provider || '').trim().toLowerCase()));
+  ipcMain.handle('auth:restore-all', async () => {
+    const restored = await restoreProviderAuthSessions(authSession());
+    const vault = readCredentialVault();
+    return {
+      providers: [...PROVIDER_KEYS].map((provider) => ({
+        provider,
+        verified: Boolean(restored[provider]?.verified),
+        remembered: Boolean(vault.providers[provider]?.ciphertext),
+        savedAt: vault.providers[provider]?.savedAt || null
+      }))
+    };
+  });
   ipcMain.handle('auth:open-upload', (_event, provider) => openProviderUpload(String(provider || '').trim().toLowerCase()));
   ipcMain.handle('naver:upload-clips', (_event, payload) => runNaverClipAutomation(payload));
   ipcMain.handle('auth:force-logout', (_event, provider) => clearProviderAuth(String(provider || '').trim().toLowerCase()));
@@ -247,8 +282,9 @@ function registerIpc() {
     });
   });
   ipcMain.handle('credentials:get', (_event, provider) => {
-    if (!provider || !safeStorage.isEncryptionAvailable()) return { supported: false };
-    const entry = readCredentialVault().providers[String(provider)];
+    const providerKey = String(provider || '').trim().toLowerCase();
+    if (!getProviderConfig(providerKey) || !safeStorage.isEncryptionAvailable()) return { supported: false };
+    const entry = readCredentialVault().providers[providerKey];
     if (!entry?.ciphertext) return { supported: true, saved: false };
     try {
       const value = JSON.parse(safeStorage.decryptString(Buffer.from(entry.ciphertext, 'base64')));
@@ -258,17 +294,18 @@ function registerIpc() {
   ipcMain.handle('credentials:save', (_event, payload = {}) => {
     const provider = String(payload.provider || '').trim().toLowerCase();
     const vault = readCredentialVault();
-    if (!provider) return { supported: false, saved: false };
+    if (!getProviderConfig(provider)) return { supported: false, saved: false };
     if (!payload.remember) { delete vault.providers[provider]; writeCredentialVault(vault); return { supported: true, saved: false, cleared: true }; }
     if (!safeStorage.isEncryptionAvailable() || !String(payload.password || '').trim()) return { supported: safeStorage.isEncryptionAvailable(), saved: false };
     const value = JSON.stringify({ displayName: String(payload.displayName || '').trim(), handle: String(payload.handle || '').trim(), password: String(payload.password) });
-    vault.providers[provider] = { ciphertext: safeStorage.encryptString(value).toString('base64'), savedAt: new Date().toISOString() };
+    vault.providers[provider] = { ciphertext: safeStorage.encryptString(value).toString('base64'), savedAt: new Date().toISOString(), rememberUntilLogout: true };
     writeCredentialVault(vault);
     return { supported: true, saved: true };
   });
   ipcMain.handle('credentials:clear', (_event, provider) => {
+    const providerKey = String(provider || '').trim().toLowerCase();
     const vault = readCredentialVault();
-    if (provider) delete vault.providers[String(provider).trim().toLowerCase()];
+    if (getProviderConfig(providerKey)) delete vault.providers[providerKey];
     writeCredentialVault(vault);
     return { cleared: true };
   });

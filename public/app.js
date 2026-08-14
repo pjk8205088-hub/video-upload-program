@@ -449,10 +449,31 @@ async function loadData() {
     state.analytics = { ...analytics, jobs: (analytics.jobs || []).filter((job) => supportedProviderKeys.has(job.provider)) };
     state.comments = (comments.comments || []).filter((comment) => supportedProviderKeys.has(comment.provider));
     state.logs = logs.logs || []; state.settings = settings.settings || {};
+    await restoreRememberedLoginStates();
     state.quickProviders = new Set();
     if (!state.campaignsLoaded) { state.campaigns.flatMap((campaign) => campaign.jobs || []).filter((job) => job.status === 'published').forEach((job) => state.announcedJobs.add(job.id)); state.campaignsLoaded = true; }
     state.selectedSlot = state.videos.find((video) => video.slotNumber)?.slotNumber || 1; renderAll(); const source = videoForSlot(state.selectedSlot); if (source && !$('#campaignTitle').value) fillMetadata(source);
   } catch (error) { showToast(error.message || '프로그램 데이터를 불러오지 못했습니다.', true); }
+}
+
+async function restoreRememberedLoginStates() {
+  if (!window.desktopWindow?.restoreAuthSessions) return;
+  try {
+    const result = await window.desktopWindow.restoreAuthSessions();
+    const restoredByProvider = new Map((result?.providers || []).map((item) => [item.provider, item]));
+    for (const provider of loginProviders) {
+      const restored = restoredByProvider.get(provider.key);
+      if (!restored) continue;
+      const accounts = state.accounts.filter((account) => account.provider === provider.key);
+      if (restored.verified) {
+        state.loginStates[provider.key] = 'connected';
+        accounts.forEach((account) => Object.assign(account, { status: 'connected', authVerified: true, mode: 'oauth' }));
+      } else {
+        state.loginStates[provider.key] = accounts.length ? 'failed' : 'idle';
+        accounts.forEach((account) => Object.assign(account, { status: 'login_required', authVerified: false, mode: 'oauth_pending' }));
+      }
+    }
+  } catch {}
 }
 
 function fillMetadata(video) {
