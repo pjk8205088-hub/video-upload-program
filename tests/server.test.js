@@ -16,6 +16,37 @@ test('MVP upload limit is 2 GB and the board has ten slots', () => {
   assert.equal(MAX_FILE_SIZE, 2 * 1024 * 1024 * 1024);
 });
 
+test('provider mode can be switched to live through settings', async () => withServer(async (base) => {
+  const update = await json(base, '/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ providerMode: 'live' })
+  });
+  assert.equal(update.response.status, 200);
+  assert.equal(update.payload.settings.providerMode, 'live');
+
+  const health = await json(base, '/health');
+  assert.equal(health.payload.mode, 'live');
+
+  const video = await upload(base, 1, 'live-mode.mp4');
+  const account = await json(base, '/api/accounts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: 'naver', displayName: 'Live mode account', handle: '@live-mode', authVerified: true })
+  });
+  const campaign = await json(base, '/api/campaigns', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: 'Live mode campaign',
+      scheduledAt: new Date().toISOString(),
+      routes: [{ accountId: account.payload.account.id, slotNumber: video.payload.video.slotNumber }]
+    })
+  });
+  assert.equal(campaign.payload.campaign.mode, 'live');
+  assert.equal(campaign.payload.campaign.jobs[0].mode, 'live');
+}));
+
 test('Naver Clip metadata gets a format-safe description and category recommendation', () => {
   const metadata = localMetadata({ fileName: '제주 여행 브이로그.mp4', slotNumber: 2 });
   assert.equal(metadata.naverClip.primaryCategory, '여행');

@@ -107,7 +107,20 @@ async function writeCollection(store, kind, value) {
 
 async function readSettings(store) {
   await ensureStorage(store);
-  return { ...DEFAULT_SETTINGS, ...(await readJson(store.files.settings, {})) };
+  const settings = { ...DEFAULT_SETTINGS, ...(await readJson(store.files.settings, {})) };
+  const environmentMode = String(process.env.UPLOAD_DESK_PROVIDER_MODE || '').toLowerCase();
+  settings.providerMode = ['sandbox', 'live'].includes(environmentMode)
+    ? environmentMode
+    : (settings.providerMode === 'live' ? 'live' : 'sandbox');
+  return settings;
+}
+
+function providerOptions(store, settings, mode = settings.providerMode) {
+  return {
+    mode,
+    userDataDir: process.env.UPLOAD_DESK_TIKTOK_PROFILE || path.join(store.root, '.tiktok-browser'),
+    headless: false
+  };
 }
 
 function createId(prefix = '') {
@@ -406,9 +419,10 @@ async function createCampaign(store, req, res) {
   const title = cleanText(body.title || metadata.title, '새 콘텐츠', 120);
   const description = cleanText(body.description || metadata.description, '', 1000);
   const hashtags = Array.isArray(body.hashtags) ? body.hashtags.map((tag) => cleanText(tag, '', 40)).filter(Boolean).slice(0, 12) : (metadata.hashtags || []);
+  const settings = await readSettings(store);
   const campaign = {
-    id: createId('cmp_'), title, description, hashtags, privacy: cleanText(body.privacy, 'public', 20), scheduledAt: parsedSchedule.toISOString(), status: 'scheduled', mode: 'sandbox', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), routes: acceptedRoutes, skippedRoutes,
-    jobs: acceptedRoutes.map((route) => ({ id: createId('job_'), accountId: route.accountId, provider: route.provider, handle: route.handle, slotNumber: route.slotNumber, videoId: route.videoId, clipMetadata: route.provider === 'naver' ? naverClip : null, instagramMetadata: route.provider === 'instagram' ? instagram : null, status: 'queued', progress: 0, attempt: 0, maxAttempts: MAX_ATTEMPTS, nextRetryAt: parsedSchedule.toISOString(), lastError: null, analytics: null, logs: [{ message: '예약 작업 생성', level: 'info', createdAt: new Date().toISOString() }] }))
+    id: createId('cmp_'), title, description, hashtags, privacy: cleanText(body.privacy, 'public', 20), scheduledAt: parsedSchedule.toISOString(), status: 'scheduled', mode: settings.providerMode, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), routes: acceptedRoutes, skippedRoutes,
+    jobs: acceptedRoutes.map((route) => ({ id: createId('job_'), accountId: route.accountId, provider: route.provider, handle: route.handle, slotNumber: route.slotNumber, videoId: route.videoId, clipMetadata: route.provider === 'naver' ? naverClip : null, instagramMetadata: route.provider === 'instagram' ? instagram : null, mode: settings.providerMode, status: 'queued', progress: 0, attempt: 0, maxAttempts: MAX_ATTEMPTS, nextRetryAt: parsedSchedule.toISOString(), lastError: null, analytics: null, logs: [{ message: '예약 작업 생성', level: 'info', createdAt: new Date().toISOString() }] }))
   };
   campaigns.unshift(campaign);
   await writeCollection(store, 'campaigns', campaigns);
@@ -432,27 +446,40 @@ async function runJobLegacy(store, campaign, job, video) {
   job.progress = 15;
   job.attempt = (job.attempt || 0) + 1;
   job.nextRetryAt = null;
-  addJobLog(job, `${job.attempt}회차 sandbox 전송 시작`);
-  const adapter = getProviderAdapter(job.provider);
+  const settings = await readSettings(store);
+  const adapterMode = ['sandbox', 'live'].includes(job.mode)
+    ? job.mode
+    : (['sandbox', 'live'].includes(campaign.mode) ? campaign.mode : settings.providerMode);
+  job.mode = adapterMode;
+  addJobLog(job, `${job.attempt}회차 ${adapterMode === 'live' ? '실제' : 'sandbox'} 전송 시작`);
+  const adapter = getProviderAdapter(job.provider, providerOptions(store, settings, adapterMode));
+  const publishVideo = video ? { ...video, filePath: path.join(store.uploadDir, video.storedName) } : video;
   try {
-    const result = await adapter.publish({ job, video, campaign });
+    const result = await adapter.publish({ job, video: publishVideo, campaign });
     job.status = 'published';
     job.progress = 100;
     job.externalId = result.externalId;
+    job.externalUrl = result.externalUrl || null;
     job.publishedAt = result.publishedAt;
+    job.mode = result.mode || adapterMode;
     job.lastError = null;
-    job.analytics = await adapter.getAnalytics({ job, video, campaign });
+    job.analytics = await adapter.getAnalytics({ job, video: publishVideo, campaign });
     addJobLog(job, '게시 완료 · 통계 수집 완료');
     const comments = await readCollection(store, 'comments');
-    const mockComments = await adapter.listComments({ job, video, campaign });
-    for (const item of mockComments) {
+    const providerComments = await adapter.listComments({ job, video: publishVideo, campaign });
+    for (const item of providerComments) {
       if (!comments.some((comment) => comment.externalId === item.externalId)) comments.unshift({ id: createId('comment_'), jobId: job.id, accountId: job.accountId, provider: job.provider, handle: job.handle, externalId: item.externalId, authorName: item.authorName, text: item.text, status: item.status, replies: item.replies || [], createdAt: item.createdAt, updatedAt: item.createdAt });
     }
     await writeCollection(store, 'comments', comments);
   } catch (error) {
     job.progress = 0;
     job.lastError = error.message;
-    if (job.attempt < (job.maxAttempts || MAX_ATTEMPTS)) {
+    const requiresManualReview = ['PUBLISH_STATE_UNCERTAIN', 'TIKTOK_LOGIN_REQUIRED', 'TIKTOK_SECURITY_CHALLENGE'].includes(error.code);
+    if (requiresManualReview) {
+      job.status = 'failed';
+      job.nextRetryAt = null;
+      addJobLog(job, `자동 재시도 중지 · 사용자 확인 필요: ${error.message}`, 'error');
+    } else if (job.attempt < (job.maxAttempts || MAX_ATTEMPTS)) {
       const delay = Math.min(RETRY_BASE_MS * (2 ** Math.max(job.attempt - 1, 0)), 5 * 60 * 1000);
       job.status = 'retrying';
       job.nextRetryAt = new Date(Date.now() + delay).toISOString();
@@ -497,10 +524,14 @@ async function retryJob(store, res, id) {
 
 async function refreshAnalytics(store) {
   const campaigns = await readCollection(store, 'campaigns');
+  const settings = await readSettings(store);
   for (const campaign of campaigns) {
     for (const job of campaign.jobs || []) {
       if (job.status !== 'published') continue;
-      job.analytics = await getProviderAdapter(job.provider).getAnalytics({ job });
+      const adapterMode = ['sandbox', 'live'].includes(job.mode)
+        ? job.mode
+        : (['sandbox', 'live'].includes(campaign.mode) ? campaign.mode : settings.providerMode);
+      job.analytics = await getProviderAdapter(job.provider, providerOptions(store, settings, adapterMode)).getAnalytics({ job });
     }
   }
   await writeCollection(store, 'campaigns', campaigns);
@@ -514,7 +545,9 @@ async function handleCommentAction(store, req, res, id, action) {
   if (!comment) return sendError(res, 404, '댓글을 찾을 수 없습니다.', 'COMMENT_NOT_FOUND');
   const campaigns = await readCollection(store, 'campaigns');
   const job = campaigns.flatMap((campaign) => campaign.jobs || []).find((item) => item.id === comment.jobId);
-  const adapter = getProviderAdapter(comment.provider);
+  const settings = await readSettings(store);
+  const adapterMode = ['sandbox', 'live'].includes(job?.mode) ? job.mode : settings.providerMode;
+  const adapter = getProviderAdapter(comment.provider, providerOptions(store, settings, adapterMode));
   if (action === 'reply') {
     const body = await readRequestBody(req);
     const text = cleanText(body.text, '', 500);
@@ -574,7 +607,7 @@ function createServer(options = {}) {
       await ensureStorage(store);
       const requestUrl = new URL(req.url, 'http://localhost');
       const { pathname, searchParams } = requestUrl;
-      if (req.method === 'GET' && pathname === '/health') return sendJson(res, 200, { ok: true, mode: 'sandbox' });
+      if (req.method === 'GET' && pathname === '/health') return sendJson(res, 200, { ok: true, mode: (await readSettings(store)).providerMode });
       if (req.method === 'GET' && pathname === '/api/videos') return sendJson(res, 200, { videos: await readCollection(store, 'videos'), maxSlots: MAX_SLOTS });
       if (req.method === 'POST' && pathname === '/api/videos') return handleUpload(store, req, res);
       const videoMatch = pathname.match(/^\/api\/videos\/([^/]+)$/);
@@ -638,6 +671,7 @@ function createServer(options = {}) {
         const body = await readRequestBody(req);
         const settings = await readSettings(store);
         for (const key of ['launchAtStartup', 'startMinimized', 'autoUpdate']) if (typeof body[key] === 'boolean') settings[key] = body[key];
+        if (['sandbox', 'live'].includes(body.providerMode)) settings.providerMode = body.providerMode;
         settings.updatedAt = new Date().toISOString(); await writeJson(store.files.settings, settings); await appendLog(store, 'settings.updated', '앱 설정 변경', settings);
         return sendJson(res, 200, { settings });
       }

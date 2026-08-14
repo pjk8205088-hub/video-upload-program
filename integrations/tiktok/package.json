@@ -1,0 +1,19 @@
+{
+  "name": "tiktok-integration",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reusable TikTok Studio browser upload integration",
+  "main": "src/index.js",
+  "exports": "./src/index.js",
+  "scripts": {
+    "example": "node examples/upload.mjs",
+    "check": "node --check src/index.js && node --check src/tiktok-client.js && node --check examples/upload.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.55.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
