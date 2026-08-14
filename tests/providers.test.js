@@ -77,6 +77,7 @@ test('TikTok caption and visibility map campaign metadata', () => {
 
 test('live TikTok adapter publishes through the integration client', async () => {
   const calls = [];
+  let factoryOptions;
   const fakeClient = {
     async start() { calls.push('start'); },
     async uploadVideos(options) {
@@ -91,7 +92,11 @@ test('live TikTok adapter publishes through the integration client', async () =>
   };
   const adapter = getProviderAdapter('tiktok', {
     mode: 'live',
-    clientFactory: () => fakeClient
+    browserChannel: 'chrome',
+    clientFactory: (options) => {
+      factoryOptions = options;
+      return fakeClient;
+    }
   });
 
   const result = await adapter.publish({
@@ -105,6 +110,7 @@ test('live TikTok adapter publishes through the integration client', async () =>
   });
 
   assert.deepEqual(calls[0], 'start');
+  assert.equal(factoryOptions.browserChannel, 'chrome');
   assert.equal(calls[1].finalize, true);
   assert.deepEqual(calls[1].videos, [{
     filePath: 'C:\\videos\\clip.mp4',

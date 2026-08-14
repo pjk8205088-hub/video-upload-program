@@ -43,10 +43,11 @@ npx playwright install chromium
 ```powershell
 $env:UPLOAD_DESK_PROVIDER_MODE="live"
 $env:UPLOAD_DESK_TIKTOK_PROFILE="E:\upload-desk-data\tiktok-profile"
+$env:UPLOAD_DESK_TIKTOK_BROWSER_CHANNEL="chrome"
 npm start
 ```
 
-TikTok 작업을 처음 실행하면 영구 Chromium 창이 열립니다. 사용자가 직접 로그인하면 이후 세션이 `UPLOAD_DESK_TIKTOK_PROFILE`에 유지됩니다. 코드는 비밀번호, 인증 코드, 쿠키를 직접 입력하거나 읽지 않습니다.
+TikTok 작업을 처음 실행하면 설치된 일반 Chrome 창이 열립니다. 사용자가 직접 로그인하면 이후 세션이 `UPLOAD_DESK_TIKTOK_PROFILE`에 유지됩니다. 실행 중인 개인 Chrome 프로필을 읽거나 복사하지 않으며, 비밀번호·인증 코드·쿠키를 코드가 직접 다루지 않습니다. 일반 Chrome이 없는 환경에서는 `UPLOAD_DESK_TIKTOK_BROWSER_CHANNEL=chromium`과 `npx playwright install chromium`을 사용할 수 있습니다. Codex의 **Settings → Computer use** 확장은 Codex가 기존 Chrome을 제어할 때만 필요하며 이 앱 실행에는 필요하지 않습니다.
 
 실제 게시 과정은 다음 조건을 모두 만족해야 성공으로 기록됩니다.
 

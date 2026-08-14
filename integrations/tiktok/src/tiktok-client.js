@@ -36,11 +36,16 @@ export class TikTokPublishUncertainError extends Error {
 export class TikTokClient {
   constructor({
     userDataDir = path.resolve(process.cwd(), ".tiktok-browser"),
+    browserChannel = "chrome",
     headless = false,
     timeoutMs = 120_000,
     logger = console
   } = {}) {
     this.userDataDir = path.resolve(userDataDir);
+    this.browserChannel = String(browserChannel || "chrome").toLowerCase();
+    if (!["chrome", "msedge", "chromium"].includes(this.browserChannel)) {
+      throw new Error(`지원하지 않는 브라우저 채널입니다: ${browserChannel}`);
+    }
     this.headless = headless;
     this.timeoutMs = timeoutMs;
     this.logger = logger;
@@ -52,14 +57,18 @@ export class TikTokClient {
     if (this.context) return this;
 
     try {
-      this.context = await chromium.launchPersistentContext(this.userDataDir, {
+      const launchOptions = {
         headless: this.headless,
         viewport: { width: 1440, height: 1000 }
-      });
+      };
+      if (this.browserChannel !== "chromium") launchOptions.channel = this.browserChannel;
+      this.context = await chromium.launchPersistentContext(this.userDataDir, launchOptions);
     } catch (error) {
       if (/executable|browser.*not found|playwright install/i.test(error.message)) {
         throw new Error(
-          "Playwright Chromium이 없습니다. `npx playwright install chromium`을 실행하세요."
+          this.browserChannel === "chromium"
+            ? "Playwright Chromium이 없습니다. `npx playwright install chromium`을 실행하세요."
+            : `${this.browserChannel} 브라우저를 찾지 못했습니다. 브라우저를 설치하거나 UPLOAD_DESK_TIKTOK_BROWSER_CHANNEL=chromium을 사용하세요.`
         );
       }
       throw error;
@@ -79,9 +88,8 @@ export class TikTokClient {
   async isLoggedIn() {
     this.#assertStarted();
     await this.page.goto(UPLOAD_URL, { waitUntil: "domcontentloaded" });
-    await this.page.waitForTimeout(700);
     await this.#throwOnSecurityChallenge();
-    return this.#hasUploadUi();
+    return this.#waitForUploadUi(5_000);
   }
 
   async ensureLoggedIn({ waitForManualLogin = true, manualTimeoutMs = 300_000 } = {}) {
@@ -100,11 +108,13 @@ export class TikTokClient {
       if (await this.#hasUploadUi()) return true;
 
       const currentUrl = this.page.url();
-      const appearsAuthenticated =
-        /tiktok\.com\/tiktokstudio/i.test(currentUrl) && !/login|passport/i.test(currentUrl);
-      if (appearsAuthenticated && Date.now() - lastNavigationAt > 5_000) {
+      const canRetryStudio =
+        /(?:^|\.)tiktok\.com/i.test(new URL(currentUrl).hostname) &&
+        !/login|passport/i.test(currentUrl);
+      if (canRetryStudio && Date.now() - lastNavigationAt > 5_000) {
         lastNavigationAt = Date.now();
         await this.page.goto(UPLOAD_URL, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+        if (await this.#waitForUploadUi(5_000)) return true;
       }
     }
 
@@ -335,6 +345,16 @@ export class TikTokClient {
       .getByRole("button", { name: /동영상 선택|Select video/i })
       .isVisible()
       .catch(() => false);
+  }
+
+  async #waitForUploadUi(timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await this.#throwOnSecurityChallenge();
+      if (await this.#hasUploadUi()) return true;
+      await this.page.waitForTimeout(250);
+    }
+    return false;
   }
 
   async #throwOnSecurityChallenge() {

@@ -2,6 +2,7 @@ import { TikTokClient } from "../src/index.js";
 
 const client = new TikTokClient({
   userDataDir: ".tiktok-browser",
+  browserChannel: "chrome",
   headless: false
 });
 

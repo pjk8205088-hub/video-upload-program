@@ -138,6 +138,7 @@ function providerOptions(store, settings, mode = settings.providerMode) {
   return {
     mode,
     userDataDir: process.env.UPLOAD_DESK_TIKTOK_PROFILE || path.join(store.root, '.tiktok-browser'),
+    browserChannel: process.env.UPLOAD_DESK_TIKTOK_BROWSER_CHANNEL || 'chrome',
     headless: false
   };
 }
