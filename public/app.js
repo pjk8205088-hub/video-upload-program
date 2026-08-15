@@ -321,7 +321,7 @@ function renderLoginPages() {
     const forceLogoutButton = `<button class="button force-logout-button" data-force-logout-provider="${item.key}" type="button">강제 로그아웃</button>`;
     const uploadPageButton = linked.length ? `<button class="button upload-page-button" data-open-upload-provider="${item.key}" type="button">동영상 업로드 페이지 열기 ↗</button>` : '';
     const authMessage = loginState === 'failed' ? '<div class="login-auth-error"><span class="status-light is-waiting"></span><strong>로그인 실패</strong><small>아이디·비밀번호 또는 공식 로그인 상태를 확인해 주세요.</small></div>' : loginState === 'pending' ? '<div class="login-auth-pending"><span class="status-light is-waiting"></span><strong>로그인 확인 중</strong><small>공식 로그인 창에서 인증을 완료해 주세요.</small></div>' : '';
-    const externalLogin = item.loginUrl ? `<a class="button login-external-button" href="${escapeHtml(item.loginUrl)}" target="_blank" rel="noreferrer">공식 로그인 창 열기 ↗</a>` : '';
+    const externalLogin = item.loginUrl ? `<a class="button login-external-button${loginState === 'connected' ? ' is-verified' : ''}" data-external-login-provider="${item.key}" href="${escapeHtml(item.loginUrl)}" target="_blank" rel="noreferrer">${loginState === 'connected' ? '로그인됨 · 다시 할 필요 없음' : '공식 로그인 창 열기 ↗'}</a>` : '';
     return `<article class="login-page login-${item.key}" id="login-${item.key}"><div class="login-page-head"><span class="login-brand login-brand-${item.accent}">${item.code}</span><div><span class="eyebrow">${item.service}</span><h3>${item.label} 로그인</h3></div><span class="login-page-index">${String(index + 1).padStart(2, '0')}</span></div><div class="login-copy"><strong>${item.title}</strong><p>${item.description}</p><span class="login-scopes">${item.scopes}</span></div>${prerequisiteNotice}${authMessage}<div class="login-connected"><div class="login-connected-label"><span>연결 상태</span><b>${linked.length ? `${linked.length}개 연결됨` : '연결 대기'}</b></div>${accounts}${forceLogoutButton}</div><div class="login-actions">${uploadPageButton}<button class="button login-button login-button-${item.accent}${prerequisite && !prerequisiteReady ? ' is-blocked' : ''}" data-login-provider="${item.key}" type="button">${prerequisite && !prerequisiteReady ? `${prerequisite.label} 로그인 필요` : linked.length ? '다른 계정 연결' : `${item.label} 로그인 확인`} <span>→</span></button>${externalLogin}</div><div class="login-page-footer"><span>OAuth callback seam</span><span>${linked.length ? 'OAUTH CONNECTED' : prerequisite && !prerequisiteReady ? 'FACEBOOK AUTH REQUIRED' : loginState === 'failed' ? 'LOGIN FAILED' : 'LOGIN VERIFICATION REQUIRED'}</span></div></article>`;
   }).join('');
 }
@@ -389,8 +389,17 @@ function renderNaverClipOptions() {
   if (instagramPanel && panel.parentElement === instagramPanel.parentElement && panel.nextElementSibling !== instagramPanel) {
     panel.parentElement.insertBefore(panel, instagramPanel);
   }
-  const visible = hasNaverClipRoute(); panel.hidden = !visible;
-  const video = videoForSlot(state.selectedSlot) || naverClipRoutedVideos()[0]; const clip = video?.aiMetadata?.naverClip;
+  // Keep both preparation cards present as the default workspace. They remain
+  // display-only until a verified account and a routed video are available.
+  const visible = true; panel.hidden = false;
+  const video = videoForSlot(state.selectedSlot) || naverClipRoutedVideos()[0];
+  const clip = video?.aiMetadata?.naverClip || {
+    description: '영상 소개를 입력하면 클립 설명으로 사용됩니다.',
+    primaryCategory: '라이프 이벤트',
+    secondaryCategory: '라이프 이벤트',
+    publicEnabled: true,
+    commentsAllowed: 'deny'
+  };
   if (visible) applyNaverClipMetadata(clip);
   const generating = visible && video && !clip && state.naverClipAutoSlots.has(video.id);
   const generateButton = $('#generateNaverClipButton'); if (generateButton) { generateButton.disabled = Boolean(generating); generateButton.textContent = generating ? '클립 설정 자동 준비 중…' : '✦ 클립 문구·카테고리 자동 생성'; }
@@ -399,7 +408,7 @@ function renderNaverClipOptions() {
     const hint = $('#naverClipCategoryHint'); if (hint) hint.textContent = '클립 문구와 카테고리를 자동으로 준비하고 있습니다.';
     generateNaverClipForVideo(video).then(() => renderAll()).catch(() => { state.naverClipAutoSlots.delete(video.id); const retryHint = $('#naverClipCategoryHint'); if (retryHint) retryHint.textContent = '자동 준비에 실패했습니다. 생성 버튼으로 다시 시도해 주세요.'; renderNaverClipOptions(); });
   }
-  const ready = visible && ($('#naverClipDescription')?.value.trim().length || 0) >= 10 && Boolean($('#naverClipCategoryPrimary')?.value) && Boolean($('#naverClipCategorySecondary')?.value);
+  const ready = visible && hasNaverClipRoute() && ($('#naverClipDescription')?.value.trim().length || 0) >= 10 && Boolean($('#naverClipCategoryPrimary')?.value) && Boolean($('#naverClipCategorySecondary')?.value);
   const naverAccounts = state.accounts.filter((account) => account.provider === 'naver' && isAuthenticatedAccount(account));
   const uploading = naverAccounts.some((account) => state.directUploads.has(account.id));
   const registerButton = $('#registerNaverClipButton');
@@ -433,8 +442,8 @@ function applyInstagramMetadata(metadata, force = false) {
 }
 function renderInstagramOptions() {
   const panel = $('#instagramOptions'); if (!panel) return;
-  const facebookMode = hasFacebookRoute();
-  const visible = hasInstagramRoute() || hasFacebookRoute(); panel.hidden = !visible;
+  const facebookMode = hasFacebookRoute() || !hasInstagramRoute();
+  const visible = true; panel.hidden = false;
   const eyebrow = panel.querySelector('.eyebrow'); if (eyebrow) eyebrow.textContent = facebookMode ? 'FACEBOOK VIDEO FORMAT' : 'INSTAGRAM REELS FORMAT';
   const heading = panel.querySelector('.instagram-head strong'); if (heading) heading.textContent = facebookMode ? '페이스북 동영상 자동 설정' : '인스타그램 릴스 자동 설정';
   const description = panel.querySelector('.instagram-head p'); if (description) description.textContent = facebookMode ? 'Facebook 계정에 연결된 프로그램 저장 슬롯 1~10번을 사용합니다.' : 'Instagram 계정에 연결된 프로그램 저장 슬롯 1~10번을 사용합니다.';
@@ -443,7 +452,12 @@ function renderInstagramOptions() {
   const caption = $('#instagramCaption'); if (caption) caption.placeholder = facebookMode ? '페이스북 동영상에 표시할 게시글' : '인스타그램 릴스에 표시할 캡션';
   const postButton = $('#publishInstagramButton'); if (postButton) postButton.innerHTML = `${facebookMode ? '페이스북 게시' : '게시'} <span>→</span>`;
   const video = videoForSlot(state.selectedSlot) || (facebookMode ? facebookRoutedVideos() : instagramRoutedVideos())[0]; const metadata = facebookMode ? video?.aiMetadata?.facebook : video?.aiMetadata?.instagram;
-  if (visible) applyInstagramMetadata(metadata);
+  if (visible) applyInstagramMetadata(metadata || {
+    caption: '영상 소개를 입력하면 게시글 문구로 사용됩니다.',
+    shareToFeed: true,
+    allowComments: false,
+    privacy: 'public'
+  });
   const generating = visible && video && !metadata && state.instagramAutoSlots.has(video.id);
   const generateButton = $('#generateInstagramButton'); if (generateButton) { generateButton.disabled = Boolean(generating); generateButton.textContent = generating ? `${facebookMode ? '페이스북' : '릴스'} 설정 자동 준비 중…` : `✦ ${facebookMode ? '페이스북 글' : '릴스 문구'} 자동 생성`; }
   if (visible && video && !metadata && !state.instagramAutoSlots.has(video.id)) {
@@ -451,12 +465,12 @@ function renderInstagramOptions() {
     const hint = $('#instagramStatusHint'); if (hint) hint.textContent = '릴스 문구와 게시 옵션을 자동으로 준비하고 있습니다.';
     (facebookMode ? generateFacebookForVideo(video) : generateInstagramForVideo(video)).then((result) => { applyInstagramMetadata(facebookMode ? { caption: result.description, hashtags: result.hashtags } : result.instagram, true); renderAll(); }).catch(() => { state.instagramAutoSlots.delete(video.id); const retryHint = $('#instagramStatusHint'); if (retryHint) retryHint.textContent = '자동 준비에 실패했습니다. 생성 버튼으로 다시 시도해 주세요.'; renderInstagramOptions(); });
   }
-  const ready = visible && Boolean($('#instagramCaption')?.value.trim());
+  const ready = visible && (hasInstagramRoute() || hasFacebookRoute()) && Boolean($('#instagramCaption')?.value.trim());
   const publishButton = $('#publishInstagramButton'); if (publishButton) publishButton.disabled = !ready;
 }
 function readInstagramForm() {
   const caption = $('#instagramCaption')?.value.trim() || '';
-  if (!caption && !hasInstagramRoute() && !hasFacebookRoute()) return null;
+  if (!hasInstagramRoute() && !hasFacebookRoute()) return null;
   const metadata = { caption, hashtags: ($('#campaignHashtags')?.value || '').split(/\s+/).map((tag) => tag.trim()).filter(Boolean), shareToFeed: $('#instagramShareToFeed')?.checked !== false, allowComments: $('#instagramAllowComments')?.checked !== false, privacy: $('#facebookPrivacy')?.value || 'public' };
   const facebookMode = hasFacebookRoute();
   const video = videoForSlot(state.selectedSlot) || (facebookMode ? facebookRoutedVideos() : instagramRoutedVideos())[0]; if (video) video.aiMetadata = { ...(video.aiMetadata || {}), [facebookMode ? 'facebook' : 'instagram']: metadata };
@@ -464,7 +478,7 @@ function readInstagramForm() {
 }
 function readNaverClipForm() {
   const description = $('#naverClipDescription')?.value.trim() || ''; const primaryCategory = $('#naverClipCategoryPrimary')?.value || ''; const secondaryCategory = $('#naverClipCategorySecondary')?.value || '';
-  if (!description && !primaryCategory && !secondaryCategory) return null;
+  if (!hasNaverClipRoute()) return null;
   const productType = $('#naverProductSelect')?.value || ''; const productName = $('#naverProductName')?.value.trim() || ''; const productUrl = $('#naverProductUrl')?.value.trim() || '';
   const clip = { title: $('#campaignTitle')?.value.trim() || '', description, hashtags: ($('#campaignHashtags')?.value || '').split(/\s+/).map((tag) => tag.trim()).filter(Boolean), primaryCategory, secondaryCategory, productInfo: productName || productUrl ? { type: productType, name: productName, url: productUrl } : null, publicEnabled: $('#naverClipPublic')?.checked !== false, scheduleRegistration: Boolean($('#naverClipSchedule')?.checked), schedulePrivate: Boolean($('#naverClipPrivateSchedule')?.checked), country: document.querySelector('input[name="naverClipCountry"]:checked')?.value || 'all', commentsAllowed: 'deny' };
   const video = videoForSlot(state.selectedSlot) || naverClipRoutedVideos()[0]; if (video) video.aiMetadata = { ...(video.aiMetadata || {}), naverClip: clip };
@@ -604,7 +618,7 @@ async function deleteVideo(id) { const video = state.videos.find((item) => item.
 async function toggleRoute(input) { const account = state.accounts.find((item) => item.id === input.dataset.accountSlot); const slot = Number(input.dataset.slotNumber); if (!account) return; if (uploadedSlotsForAccount(account.id).has(slot)) { input.checked = true; showToast(`${slot}번 영상은 이미 업로드되어 다시 선택할 수 없습니다.`, true); return; } const previous = [...(account.slotNumbers || [])]; account.slotNumbers = input.checked ? [...new Set([...previous, slot])].sort((a, b) => a - b) : previous.filter((item) => item !== slot); state.accountUploadStates.delete(account.id); renderAccounts(); try { const result = await api(`/api/accounts/${encodeURIComponent(account.id)}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: account.slotNumbers }) }); Object.assign(account, result.account); renderAll(); } catch (error) { account.slotNumbers = previous; renderAll(); showToast(error.message, true); } }
 
 async function saveAccount(event) { event.preventDefault(); try { const result = await api('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: $('#accountProvider').value, displayName: $('#accountDisplayName').value, handle: $('#accountHandle').value }) }); state.accounts.unshift(result.account); const quickProvider = state.pendingQuickProvider; state.pendingQuickProvider = ''; if (quickProvider === result.account.provider && videoForSlot(state.selectedSlot)) { state.quickProviders.add(quickProvider); result.account.slotNumbers = [state.selectedSlot]; try { const routed = await api(`/api/accounts/${encodeURIComponent(result.account.id)}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: result.account.slotNumbers }) }); Object.assign(result.account, routed.account); } catch {} } closeAccountModal(); renderAll(); document.querySelector(`#login-${result.account.provider}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); showToast(`${providerFor(result.account.provider).label} 계정을 연결했습니다.`); } catch (error) { showToast(error.message, true); } }
-async function resetAccountRoutes(id) { const account = state.accounts.find((item) => item.id === id); if (!account) return; if (!(account.slotNumbers || []).length) return showToast('이미 선택된 영상이 없습니다.'); if (!window.confirm(`${account.handle} 계정의 선택 영상을 모두 리셋할까요? 로그인 상태는 유지됩니다.`)) return; const previous = [...(account.slotNumbers || [])]; try { const result = await api(`/api/accounts/${encodeURIComponent(id)}/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slotNumbers: [] }) }); Object.assign(account, result.account); state.accountUploadStates.delete(id); renderAll(); showToast(`${previous.length}개 영상 선택을 리셋했습니다. 로그인 상태는 유지됩니다.`); } catch (error) { account.slotNumbers = previous; renderAll(); showToast(error.message, true); } }
+async function resetAccountRoutes(id) { const account = state.accounts.find((item) => item.id === id); if (!account) return; if (!(account.slotNumbers || []).length) return showToast('이미 선택된 영상이 없습니다.'); if (!window.confirm(`${account.handle} 계정의 선택 영상과 업로드 상태를 모두 리셋할까요? 로그인 상태는 유지됩니다.`)) return; const previous = [...(account.slotNumbers || [])]; try { const result = await api(`/api/accounts/${encodeURIComponent(id)}/reset`, { method: 'POST' }); Object.assign(account, result.account, { slotNumbers: [] }); state.campaigns = result.campaigns || []; state.accountUploadStates.delete(id); renderAll(); showToast(`${previous.length}개 영상 선택과 업로드 상태를 리셋했습니다. 로그인 상태는 유지됩니다.`); } catch (error) { account.slotNumbers = previous; renderAll(); showToast(error.message, true); } }
 async function removeAccount(id) { const account = state.accounts.find((item) => item.id === id); if (!account || !window.confirm(`${account.handle} 연결을 해제할까요?`)) return; try { await api(`/api/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' }); state.accounts = state.accounts.filter((item) => item.id !== id); state.accountUploadStates.delete(id); if (!state.accounts.some((item) => item.provider === account.provider)) state.uploadPageStates[account.provider] = 'idle'; renderAll(); showToast('계정 연결을 해제했습니다.'); } catch (error) { showToast(error.message, true); } }
 async function forceLogoutProvider(providerKey) {
   const provider = providerFor(providerKey);
@@ -819,6 +833,7 @@ async function checkUpdates() { $('#updateStatus').textContent = '업데이트 �
 
 document.addEventListener('click', (event) => {
   const target = event.target.closest('button, a'); if (!target) return;
+  if (target.dataset.externalLoginProvider) monitorExternalLogin(target.dataset.externalLoginProvider);
   if (target.dataset.uploadSlot) startFilePicker(target.dataset.uploadSlot);
   if (target.dataset.selectSlot) { state.selectedSlot = Number(target.dataset.selectSlot); const video = videoForSlot(state.selectedSlot); if (video && !$('#campaignTitle').value) fillMetadata(video); renderAll(); }
   if (target.dataset.deleteVideo) deleteVideo(target.dataset.deleteVideo);
@@ -861,6 +876,28 @@ $('#campaignForm').addEventListener('submit', publishSelectedNow); $('#generateA
 $('#openAccountButton').addEventListener('click', openAccountModal); $('#accountForm').addEventListener('submit', saveAccountWithCredentials); $('#accountProvider').addEventListener('change', () => fillRememberedCredentials($('#accountProvider').value)); $('#closeAccountModal').addEventListener('click', closeAccountModal); $('#cancelAccountModal').addEventListener('click', closeAccountModal); $('#accountModal').addEventListener('click', (event) => { if (event.target.id === 'accountModal') closeAccountModal(); });
 $('#prevMonth').addEventListener('click', () => { state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() - 1, 1); renderCalendar(); }); $('#nextMonth').addEventListener('click', () => { state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() + 1, 1); renderCalendar(); }); $('#refreshAnalytics').addEventListener('click', refreshAnalytics); $('#refreshCampaigns').addEventListener('click', loadData); $('#refreshLogs').addEventListener('click', async () => { await loadInsights(); renderAll(); }); $('#checkUpdates').addEventListener('click', checkUpdates);
 const initialSchedule = new Date(Date.now() + 3600000); initialSchedule.setSeconds(0, 0); $('#scheduleDate').value = localInputValue(initialSchedule); const loginSecurityCopy = document.querySelector('.login-security-strip strong'); const loginSecurityNote = document.querySelector('.login-security-strip p'); if (loginSecurityCopy) loginSecurityCopy.textContent = '비밀번호는 암호화 저장소에만 보관됩니다.'; if (loginSecurityNote) loginSecurityNote.textContent = '비밀번호는 서버로 보내지지 않으며, Electron에서는 운영체제 암호화 저장소에만 기억합니다.'; loadData();
+async function monitorExternalLogin(providerKey) {
+  if (state.loginStates[providerKey] === 'pending') return;
+  state.loginStates[providerKey] = 'pending';
+  renderLoginPages();
+  for (let attempt = 0; attempt < 15; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 1200 : 2000));
+    try {
+      const result = await window.desktopWindow?.verifyLogin?.(providerKey);
+      if (result?.verified) {
+        state.loginStates[providerKey] = 'connected';
+        state.uploadPageStates[providerKey] = 'ready';
+        await restoreRememberedLoginStates();
+        renderAll();
+        showToast(`${providerFor(providerKey).label} 로그인됨 · 다시 할 필요 없습니다.`);
+        return;
+      }
+    } catch {}
+  }
+  state.loginStates[providerKey] = 'failed';
+  renderLoginPages();
+}
+
 window.desktopWindow?.onNaverClipProgress?.((progress = {}) => {
   if (progress.status === 'preparing' || progress.status === 'registering') showToast(progress.message || '네이버 클립 등록을 준비하고 있습니다.');
   if (progress.status === 'published') showToast(progress.message || `네이버 클립 ${progress.slotNumber}번 동영상 등록이 완료되었습니다.`);
@@ -911,3 +948,28 @@ document.addEventListener('change', (event) => {
   renderAll();
 });
 if (immediateSubmit) immediateSubmit.innerHTML = '선택된 SNS에 바로 등록 <span>→</span>';
+// TikTok uses the already verified Facebook session. Reflect that in the connection dialog.
+function syncTikTokLoginDialog() {
+  const providerKey = $('#accountProvider')?.value;
+  const viaFacebook = providerKey === 'tiktok' && hasLoginPrerequisite('tiktok');
+  const submit = $('#accountForm button[type="submit"]');
+  const password = $('#accountPassword');
+  const passwordLabel = password?.closest('label');
+  const remember = $('#rememberAccount')?.closest('.remember-login');
+  const provider = providerFor(providerKey || 'instagram');
+  if (submit) submit.textContent = viaFacebook ? 'TikTok 로그인' : `${provider.label} 로그인 확인`;
+  if (password) {
+    password.required = !viaFacebook;
+    password.placeholder = viaFacebook ? 'Facebook 로그인 세션을 사용합니다' : '공식 로그인 창에서 입력하세요';
+  }
+  if (passwordLabel) passwordLabel.hidden = viaFacebook;
+  if (remember) remember.hidden = viaFacebook;
+}
+
+document.addEventListener('click', (event) => {
+  if (event.target.closest('#openAccountButton, [data-login-provider="tiktok"], [data-connect-missing-provider="tiktok"]')) setTimeout(syncTikTokLoginDialog, 0);
+  if (event.target.closest('#accountForm button[type="submit"]')) syncTikTokLoginDialog();
+});
+document.addEventListener('change', (event) => {
+  if (event.target.matches('#accountProvider')) syncTikTokLoginDialog();
+});

@@ -379,6 +379,29 @@ async function updateAccountRouting(store, req, res, id) {
   return sendJson(res, 200, { account });
 }
 
+async function resetAccountUploads(store, res, id) {
+  const accounts = await readAccounts(store);
+  const account = accounts.find((item) => item.id === id);
+  if (!account) return sendError(res, 404, '연결된 계정을 찾을 수 없습니다.', 'ACCOUNT_NOT_FOUND');
+  const campaigns = await readCollection(store, 'campaigns');
+  const nextCampaigns = [];
+  let removedJobs = 0;
+  for (const campaign of campaigns) {
+    const jobs = (campaign.jobs || []).filter((job) => {
+      const remove = job.accountId === id;
+      if (remove) removedJobs += 1;
+      return !remove;
+    });
+    if (!jobs.length) continue;
+    campaign.jobs = jobs;
+    updateCampaignStatus(campaign);
+    nextCampaigns.push(campaign);
+  }
+  await writeCollection(store, 'campaigns', nextCampaigns);
+  await appendLog(store, 'account.uploads.reset', `${account.handle} 업로드 기록 초기화`, { accountId: id, removedJobs });
+  return sendJson(res, 200, { account, campaigns: nextCampaigns, removedJobs });
+}
+
 async function deleteAccount(store, res, id) {
   const accounts = await readAccounts(store);
   const account = accounts.find((item) => item.id === id);
@@ -610,6 +633,8 @@ function createServer(options = {}) {
       if (req.method === 'POST' && pathname === '/api/accounts') return createAccount(store, req, res);
       const accountRoutingMatch = pathname.match(/^\/api\/accounts\/([^/]+)\/routing$/);
       if (req.method === 'PUT' && accountRoutingMatch) return updateAccountRouting(store, req, res, accountRoutingMatch[1]);
+      const accountResetMatch = pathname.match(/^\/api\/accounts\/([^/]+)\/reset$/);
+      if (req.method === 'POST' && accountResetMatch) return resetAccountUploads(store, res, accountResetMatch[1]);
       const accountMatch = pathname.match(/^\/api\/accounts\/([^/]+)$/);
       if (req.method === 'DELETE' && accountMatch) return deleteAccount(store, res, accountMatch[1]);
       if (req.method === 'GET' && pathname === '/api/campaigns') return sendJson(res, 200, { campaigns: await readCollection(store, 'campaigns') });

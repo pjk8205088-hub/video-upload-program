@@ -186,6 +186,27 @@ test('TikTok live adapter receives the configured browser channel', () => {
   assert.equal(adapter.browserChannel, 'msedge');
 });
 
+test('live TikTok adapter receives the verified login cookies', async () => {
+  const cookie = { name: 'sessionid', value: 'verified', domain: '.tiktok.com', path: '/' };
+  let receivedOptions;
+  const adapter = getProviderAdapter('tiktok', {
+    mode: 'live',
+    initialCookiesProvider: async (provider) => provider === 'tiktok' ? [cookie] : [],
+    clientFactory: (options) => {
+      receivedOptions = options;
+      return {
+        async start() {},
+        async uploadVideos() {
+          return [{ externalId: 'tiktok-cookie', url: 'https://www.tiktok.com/@tester/video/tiktok-cookie' }];
+        },
+        async close() {}
+      };
+    }
+  });
+  await adapter.publish({ job: { id: 'job-tiktok-cookie' }, video: { filePath: 'C:\\videos\\tiktok.mp4' }, campaign: {} });
+  assert.deepEqual(receivedOptions.initialCookies, [cookie]);
+});
+
 test('live TikTok adapter publishes through the integration client', async () => {
   const calls = [];
   const fakeClient = {
