@@ -134,7 +134,7 @@ test('Naver Clip metadata uses shopping info tag and campaign categories', () =>
       campaign: { title: '기본 제목', description: '상품 설명', hashtags: ['#쇼핑'] },
       job: { clipMetadata: { primaryCategory: '라이프 이벤트', secondaryCategory: '쇼핑', publicEnabled: true } }
     }),
-    { caption: '상품 설명\n\n#쇼핑', category: ['라이프 이벤트', '쇼핑'], infoTag: '쇼핑', visibility: 'public' }
+    { caption: '상품 설명\n\n#쇼핑', category: ['라이프스타일', '쇼핑'], infoTag: '쇼핑', visibility: 'public' }
   );
 });
 
@@ -159,7 +159,7 @@ test('live Naver Clip adapter registers through the integration client', async (
   assert.deepEqual(calls[1].videos[0], {
     filePath: 'C:\\videos\\clip.mp4',
     caption: '네이버 상품 설명\n\n#정보',
-    category: ['라이프 이벤트', '쇼핑'],
+    category: ['라이프스타일', '쇼핑'],
     infoTag: '쇼핑',
     visibility: 'public'
   });

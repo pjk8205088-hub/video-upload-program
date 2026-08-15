@@ -10,6 +10,7 @@ const { PROVIDERS } = require('./lib/providers');
 const { normalizeAccounts, upsertVerifiedAccount } = require('./lib/auth');
 const { buildUploadRoutes, selectReadyJobs } = require('./lib/upload');
 const { SocialUploadEngine, socialProviderCatalog } = require('./lib/social-engine');
+const { normalizeNaverCategory } = require('./lib/naver-category');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -158,7 +159,7 @@ function cleanText(value, fallback = '', max = 1000) {
 function cleanNaverClipMetadata(value) {
   if (!value || typeof value !== 'object') return null;
   const product = value.productInfo && typeof value.productInfo === 'object' ? { type: cleanText(value.productInfo.type, '', 40), name: cleanText(value.productInfo.name, '', 120), url: cleanText(value.productInfo.url, '', 500) } : null;
-  return { title: cleanText(value.title, '', 80), description: cleanText(value.description, '', 300), hashtags: Array.isArray(value.hashtags) ? value.hashtags.map((tag) => cleanText(tag, '', 40)).filter(Boolean).slice(0, 8) : [], primaryCategory: cleanText(value.primaryCategory, '라이프 이벤트', 40), secondaryCategory: cleanText(value.secondaryCategory, '라이프 이벤트', 40), productInfo: product?.name || product?.url ? product : null, publicEnabled: value.publicEnabled !== false, scheduleRegistration: Boolean(value.scheduleRegistration), schedulePrivate: Boolean(value.schedulePrivate), country: value.country === 'kr' ? 'kr' : 'all', commentsAllowed: 'deny' };
+  return { title: cleanText(value.title, '', 80), description: cleanText(value.description, '', 300), hashtags: Array.isArray(value.hashtags) ? value.hashtags.map((tag) => cleanText(tag, '', 40)).filter(Boolean).slice(0, 8) : [], primaryCategory: cleanText(value.primaryCategory, '엔터', 40), secondaryCategory: cleanText(value.secondaryCategory, '엔터', 40), infoTag: cleanText(value.infoTag, '쇼핑', 40), productInfo: product?.name || product?.url ? product : null, publicEnabled: value.publicEnabled !== false, scheduleRegistration: Boolean(value.scheduleRegistration), schedulePrivate: Boolean(value.schedulePrivate), country: value.country === 'kr' ? 'kr' : 'all', commentsAllowed: 'deny' };
 }
 
 function cleanInstagramMetadata(value) {
@@ -469,6 +470,10 @@ async function createCampaign(store, req, res) {
   const firstVideo = videos.find((video) => video.id === acceptedRoutes[0].videoId);
   const metadata = firstVideo?.aiMetadata || {};
   const naverClip = cleanNaverClipMetadata(body.naverClip || metadata.naverClip);
+  if (naverClip) {
+    naverClip.primaryCategory = normalizeNaverCategory(naverClip.primaryCategory);
+    naverClip.secondaryCategory = normalizeNaverCategory(naverClip.secondaryCategory);
+  }
   const instagram = cleanInstagramMetadata(body.instagram || metadata.instagram);
   const facebook = cleanFacebookMetadata(body.facebook || metadata.facebook);
   const title = cleanText(body.title || metadata.title, '새 콘텐츠', 120);

@@ -5,6 +5,13 @@ import { chromium } from "playwright";
 const CREATOR_ORIGIN = "https://clipcreators.naver.com";
 const CONTENTS_URL = `${CREATOR_ORIGIN}/web/contents/clips`;
 const UPLOAD_URL = `${CREATOR_ORIGIN}/web/upload`;
+const NAVER_LIFE_PREFIX = "\uB77C\uC774\uD504";
+const NAVER_LIFE_STYLE = "\uB77C\uC774\uD504\uC2A4\uD0C0\uC77C";
+
+function normalizeNaverCategory(value) {
+  const text = String(value || "").trim();
+  return text.startsWith(NAVER_LIFE_PREFIX) ? NAVER_LIFE_STYLE : text;
+}
 
 export function normalizeCreatorText(value) {
   return String(value || "")
@@ -152,7 +159,7 @@ export class NaverClipClient {
 
     const results = [];
     for (const video of normalized) {
-      await this.page.goto(UPLOAD_URL, { waitUntil: "domcontentloaded" });
+      await this.#openUploadPage();
       await this.#waitForUploadSurface();
       await this.#selectFiles([video.filePath]);
       const draftUrl = await this.#waitForUploadCompletion(video);
@@ -245,6 +252,24 @@ export class NaverClipClient {
     throw new Error("네이버 클립 업로드 화면이 준비되지 않았습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.");
   }
 
+  async #openUploadPage() {
+    await this.page.goto(CONTENTS_URL, { waitUntil: "domcontentloaded" });
+    const uploadButton = this.page.getByRole("button", { name: /\+?\s*업로드/ }).first();
+    const uploadLink = this.page.getByRole("link", { name: /\+?\s*업로드/ }).first();
+    const target = (await uploadButton.isVisible().catch(() => false)) ? uploadButton : uploadLink;
+    if (await target.isVisible().catch(() => false)) {
+      await target.click();
+      const videoUploadItem = this.page.getByRole("menuitem", { name: /동영상 업로드/ }).first();
+      const videoUploadButton = this.page.getByRole("button", { name: /동영상 업로드/ }).first();
+      const videoUploadLink = this.page.getByRole("link", { name: /동영상 업로드/ }).first();
+      const menuTarget = (await videoUploadItem.isVisible().catch(() => false)) ? videoUploadItem : (await videoUploadButton.isVisible().catch(() => false) ? videoUploadButton : videoUploadLink);
+      if (await menuTarget.isVisible().catch(() => false)) await menuTarget.click();
+      await this.page.waitForURL(/\/web\/(?:upload|draft\/\d+)/, { timeout: this.timeoutMs }).catch(() => undefined);
+      if (await this.page.locator('input[type="file"]').count()) return;
+    }
+    await this.page.goto(UPLOAD_URL, { waitUntil: "domcontentloaded" });
+  }
+
   #descriptionBox() {
     return this.page.locator('textarea[placeholder*="경험"], textarea[aria-label*="경험"], textarea, [contenteditable="true"]').first();
   }
@@ -265,6 +290,7 @@ export class NaverClipClient {
     await this.#chooseCategory(video.category);
     if (video.infoTag) await this.#chooseInfoTag(video.infoTag);
     if (video.productInfo?.name || video.productInfo?.url) await this.#chooseProduct(video.productInfo);
+    await this.#enableAiUsage();
     await this.#setVisibility(video.visibility);
     await this.#disableComments();
     await this.page.waitForTimeout(500);
@@ -364,7 +390,7 @@ export class NaverClipClient {
       throw new Error("최종 등록에는 category가 필요합니다.");
     }
 
-    const [primary, secondary] = category;
+    const [primary, secondary] = category.map(normalizeNaverCategory);
     await this.#chooseCategoryLevel(0, "1차 카테고리", primary);
     await this.#chooseCategoryLevel(1, "2차 카테고리", secondary);
   }
@@ -445,6 +471,24 @@ export class NaverClipClient {
     return true;
   }
 
+  async #enableAiUsage() {
+    const switchByRole = this.page.getByRole("switch", { name: /AI 활용|AI 사용|Use AI/i }).first();
+    if (await switchByRole.isVisible().catch(() => false)) {
+      if ((await switchByRole.getAttribute("aria-checked").catch(() => null)) !== "true") await switchByRole.click();
+      return true;
+    }
+    const aiText = this.page.getByText(/AI 활용 설정|AI 활용|AI 사용|Use AI/i, { exact: false }).first();
+    if (!(await aiText.isVisible().catch(() => false))) throw new Error("네이버 클립 AI 활용 설정을 찾지 못했습니다.");
+    const container = aiText.locator("xpath=ancestor::*[self::label or @role='group' or contains(@class,'setting')][1]");
+    const checkbox = container.locator('input[type="checkbox"], [role="switch"]').first();
+    if (await checkbox.isVisible().catch(() => false)) {
+      const checked = await checkbox.isChecked().catch(async () => (await checkbox.getAttribute("aria-checked")) === "true");
+      if (!checked) await checkbox.click();
+      return true;
+    }
+    throw new Error("네이버 클립 AI 활용 설정을 찾지 못했습니다.");
+  }
+
   async #setVisibility(visibility) {
     if (visibility === "current") return;
 
@@ -497,6 +541,7 @@ export class NaverClipClient {
         caption,
         category: video.category ?? [],
         infoTag: video.infoTag ?? '',
+        productInfo: video.productInfo ?? null,
         visibility: video.visibility ?? "current"
       };
     });

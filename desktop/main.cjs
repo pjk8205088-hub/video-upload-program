@@ -257,6 +257,8 @@ function naverPageScript(step, payload = {}) {
     if (${JSON.stringify(step)} === 'open') {
       if (document.querySelector('input[type="file"]')) return { ready: true, action: 'already-open' };
       clickText(['+ 업로드', '업로드']);
+      await wait(250);
+      clickText(['동영상 업로드']);
       const ready = await waitFor(() => document.querySelector('input[type="file"]'));
       return { ready: Boolean(ready), action: 'open-upload' };
     }
@@ -293,6 +295,8 @@ function naverPageScript(step, payload = {}) {
     }
     if (${JSON.stringify(step)} === 'next') {
       clickText(['+ 업로드', '업로드']);
+      await wait(250);
+      clickText(['동영상 업로드']);
       const ready = await waitFor(() => document.querySelector('input[type="file"]'));
       return { ready: Boolean(ready), action: 'next-upload' };
     }

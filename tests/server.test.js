@@ -109,7 +109,7 @@ test('Naver Clip metadata gets a format-safe description and category recommenda
   assert.equal(metadata.naverClip.primaryCategory, '여행');
   assert.equal(metadata.naverClip.secondaryCategory, '여행지');
   assert.ok(metadata.naverClip.description.length <= 300);
-  assert.equal(localMetadata({ fileName: '3.mp4' }).naverClip.primaryCategory, '라이프 이벤트');
+  assert.equal(localMetadata({ fileName: '3.mp4' }).naverClip.primaryCategory, '엔터');
   assert.equal(localMetadata({ fileName: '상품 정보와 할인 리뷰.mp4' }).naverClip.primaryCategory, '쇼핑');
   assert.equal(localMetadata({ fileName: '상품 정보와 할인 리뷰.mp4' }).naverClip.secondaryCategory, '상품 정보');
   assert.equal(metadata.instagram.shareToFeed, true);
@@ -126,6 +126,7 @@ test('Naver Clip registration keeps publish options on the job', async () => wit
   assert.equal(campaign.payload.campaign.jobs[0].clipMetadata.primaryCategory, '쇼핑');
   assert.equal(campaign.payload.campaign.jobs[0].clipMetadata.publicEnabled, false);
   assert.equal(campaign.payload.campaign.jobs[0].clipMetadata.commentsAllowed, 'deny');
+  assert.equal(campaign.payload.campaign.jobs[0].clipMetadata.infoTag, '쇼핑');
 }));
 
 test('Instagram Reels metadata persists on the job', async () => withServer(async (base) => {
@@ -212,7 +213,7 @@ test('slot routing, duplicate protection, sandbox publish, analytics and comment
   const ai = await json(base, '/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: first.payload.video.id }) });
   assert.equal(ai.response.status, 200);
   assert.equal(ai.payload.metadata.source, 'local-fallback');
-  assert.equal(ai.payload.metadata.naverClip.primaryCategory, '라이프 이벤트');
+  assert.equal(ai.payload.metadata.naverClip.primaryCategory, '엔터');
   assert.ok(ai.payload.metadata.naverClip.description.length <= 300);
 
   const account = await json(base, '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'instagram', displayName: 'Sandbox 채널', handle: '@sandbox', authVerified: true }) });
