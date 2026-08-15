@@ -16,6 +16,13 @@ test('MVP upload limit is 2 GB and the board has ten slots', () => {
   assert.equal(MAX_FILE_SIZE, 2 * 1024 * 1024 * 1024);
 });
 
+test('UI receives the unified four-provider login and upload catalog', async () => withServer(async (base) => {
+  const result = await json(base, '/api/accounts');
+  assert.equal(result.response.status, 200);
+  assert.deepEqual(result.payload.providers.map((provider) => provider.key).sort(), ['facebook', 'instagram', 'naver', 'tiktok']);
+  assert.ok(result.payload.providers.every((provider) => provider.loginUrl && provider.uploadUrl && provider.maxSlots === 10));
+}));
+
 test('provider mode can be switched to live through settings', async () => withServer(async (base) => {
   const update = await json(base, '/api/settings', {
     method: 'PUT',
@@ -45,6 +52,56 @@ test('provider mode can be switched to live through settings', async () => withS
   });
   assert.equal(campaign.payload.campaign.mode, 'live');
   assert.equal(campaign.payload.campaign.jobs[0].mode, 'live');
+}));
+
+test('direct upload creates live jobs without changing the global sandbox setting', async () => withServer(async (base) => {
+  const initialHealth = await json(base, '/health');
+  assert.equal(initialHealth.payload.mode, 'sandbox');
+
+  const video = await upload(base, 1, 'direct-live.mp4');
+  const account = await json(base, '/api/accounts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: 'facebook', displayName: 'Direct upload account', handle: 'owner@example.com', authVerified: true })
+  });
+  const sandboxCampaign = await json(base, '/api/campaigns', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: 'Existing sandbox route',
+      scheduledAt: new Date().toISOString(),
+      routes: [{ accountId: account.payload.account.id, slotNumber: video.payload.video.slotNumber }]
+    })
+  });
+  assert.equal(sandboxCampaign.response.status, 201);
+  const campaign = await json(base, '/api/campaigns', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: 'Direct live upload',
+      directUpload: true,
+      scheduledAt: new Date().toISOString(),
+      routes: [{ accountId: account.payload.account.id, slotNumber: video.payload.video.slotNumber }]
+    })
+  });
+
+  assert.equal(campaign.response.status, 201);
+  assert.equal(campaign.payload.campaign.directUpload, true);
+  assert.equal(campaign.payload.campaign.mode, 'live');
+  assert.equal(campaign.payload.campaign.jobs[0].mode, 'live');
+  const duplicateLive = await json(base, '/api/campaigns', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: 'Duplicate direct live upload',
+      directUpload: true,
+      scheduledAt: new Date().toISOString(),
+      routes: [{ accountId: account.payload.account.id, slotNumber: video.payload.video.slotNumber }]
+    })
+  });
+  assert.equal(duplicateLive.response.status, 409);
+  const unchangedHealth = await json(base, '/health');
+  assert.equal(unchangedHealth.payload.mode, 'sandbox');
 }));
 
 test('Naver Clip metadata gets a format-safe description and category recommendation', () => {

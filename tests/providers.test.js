@@ -45,7 +45,7 @@ test('Facebook metadata maps caption and hashtags for video posts', () => {
       campaign: { title: '기본 제목', hashtags: ['#캠페인'] },
       job: { facebookMetadata: { caption: '페이스북 설명', hashtags: ['#페이스북'] } }
     }),
-    { caption: '페이스북 설명\n\n#페이스북' }
+    { caption: '페이스북 설명\n\n#페이스북', pageHandle: '' }
   );
 });
 
@@ -61,7 +61,7 @@ test('live Facebook adapter publishes through the integration client', async () 
   };
   const adapter = getProviderAdapter('facebook', { mode: 'live', clientFactory: () => fakeClient });
   const result = await adapter.publish({
-    job: { id: 'job-facebook', handle: 'brand.page', facebookMetadata: { caption: '페이스북 설명', hashtags: ['#페이스북'] } },
+    job: { id: 'job-facebook', handle: 'owner@example.com', facebookMetadata: { caption: '페이스북 설명', hashtags: ['#페이스북'], pageHandle: 'brand.page' } },
     video: { filePath: 'C:\\videos\\facebook.mp4' },
     campaign: {}
   });
@@ -106,6 +106,25 @@ test('live Instagram adapter publishes through the integration client', async ()
   assert.equal(calls[2], 'close');
   assert.equal(result.mode, 'live');
   assert.equal(result.externalUrl, 'https://www.instagram.com/reel/reel-123/');
+});
+
+test('live adapter receives the verified Electron login cookies in memory', async () => {
+  const cookie = { name: 'sessionid', value: 'verified', domain: '.instagram.com', path: '/' };
+  let receivedOptions;
+  const adapter = getProviderAdapter('instagram', {
+    mode: 'live',
+    initialCookiesProvider: async (provider) => provider === 'instagram' ? [cookie] : [],
+    clientFactory: (options) => {
+      receivedOptions = options;
+      return {
+        async start() {},
+        async uploadVideos() { return [{ externalId: 'reel-cookie', url: 'https://www.instagram.com/reel/reel-cookie/' }]; },
+        async close() {}
+      };
+    }
+  });
+  await adapter.publish({ job: { id: 'job-cookie' }, video: { filePath: 'C:\\videos\\reel.mp4' }, campaign: {} });
+  assert.deepEqual(receivedOptions.initialCookies, [cookie]);
 });
 
 test('Naver Clip metadata uses shopping info tag and campaign categories', () => {
@@ -156,6 +175,15 @@ test('TikTok caption and visibility map campaign metadata', () => {
   );
   assert.equal(tiktokVisibility('public'), 'public');
   assert.equal(tiktokVisibility('unknown'), 'current');
+});
+
+test('TikTok live adapter receives the configured browser channel', () => {
+  const adapter = getProviderAdapter('tiktok', {
+    mode: 'live',
+    browserChannel: 'msedge',
+    clientFactory: () => ({})
+  });
+  assert.equal(adapter.browserChannel, 'msedge');
 });
 
 test('live TikTok adapter publishes through the integration client', async () => {

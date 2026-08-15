@@ -6,9 +6,10 @@ const crypto = require('node:crypto');
 const { URL } = require('node:url');
 const { generateMetadata } = require('./lib/ai');
 const { thumbnailSvg } = require('./lib/thumbnail');
-const { PROVIDERS, getProviderAdapter } = require('./lib/providers');
+const { PROVIDERS } = require('./lib/providers');
 const { normalizeAccounts, upsertVerifiedAccount } = require('./lib/auth');
-const { buildUploadRoutes, executeUploadJob, selectReadyJobs } = require('./lib/upload');
+const { buildUploadRoutes, selectReadyJobs } = require('./lib/upload');
+const { SocialUploadEngine, socialProviderCatalog } = require('./lib/social-engine');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -115,15 +116,28 @@ async function readSettings(store) {
   return settings;
 }
 
-function providerOptions(store, settings, mode = settings.providerMode) {
+function providerOptions(store, settings, mode = settings.providerMode, provider = '') {
   return {
     mode,
     userDataDir: process.env.UPLOAD_DESK_TIKTOK_PROFILE || path.join(store.root, '.tiktok-browser'),
+    browserChannel: process.env.UPLOAD_DESK_TIKTOK_BROWSER_CHANNEL || 'chrome',
     naverUserDataDir: process.env.UPLOAD_DESK_NAVER_PROFILE || path.join(store.root, '.naver-clip-browser'),
     instagramUserDataDir: process.env.UPLOAD_DESK_INSTAGRAM_PROFILE || path.join(store.root, '.instagram-browser'),
     facebookUserDataDir: process.env.UPLOAD_DESK_FACEBOOK_PROFILE || path.join(store.root, '.facebook-browser'),
+    initialCookiesProvider: typeof store.providerCookieLoader === 'function'
+      ? () => store.providerCookieLoader(provider)
+      : null,
     headless: false
   };
+}
+
+function createSocialEngine(store, settings, mode = settings.providerMode) {
+  return new SocialUploadEngine({
+    adapterOptions: (provider) => providerOptions(store, settings, mode, provider),
+    filePathResolver: (video) => video?.filePath || (video?.storedName ? path.join(store.uploadDir, video.storedName) : ''),
+    maxAttempts: settings.maxAttempts || MAX_ATTEMPTS,
+    retryBaseMs: RETRY_BASE_MS
+  });
 }
 
 function createId(prefix = '') {
@@ -398,8 +412,12 @@ function buildRoutesLegacy(body, accounts, videos) {
   return { routes, invalid };
 }
 
-function existingRouteKeys(campaigns) {
-  return new Set(campaigns.flatMap((campaign) => (campaign.jobs || []).filter((job) => job.status !== 'cancelled').map((job) => `${job.videoId}:${job.accountId}`)));
+function existingRouteKeys(campaigns, options = {}) {
+  const directUpload = options.directUpload === true;
+  return new Set(campaigns.flatMap((campaign) => (campaign.jobs || [])
+    .filter((job) => job.status !== 'cancelled')
+    .filter((job) => !directUpload || (job.mode === 'live' && job.status !== 'failed'))
+    .map((job) => `${job.videoId}:${job.accountId}`)));
 }
 
 async function createCampaign(store, req, res) {
@@ -411,7 +429,7 @@ async function createCampaign(store, req, res) {
   if (!routes.length) return sendError(res, 400, '영상 슬롯 번호와 업로드 대상 계정을 선택해 주세요.', 'ROUTES_REQUIRED', { invalid });
   const parsedSchedule = new Date(body.scheduledAt);
   if (Number.isNaN(parsedSchedule.getTime())) return sendError(res, 400, '예약 시각을 확인해 주세요.', 'SCHEDULE_REQUIRED');
-  const keys = existingRouteKeys(campaigns);
+  const keys = existingRouteKeys(campaigns, { directUpload: body.directUpload === true });
   const skippedRoutes = routes.filter((route) => keys.has(`${route.videoId}:${route.accountId}`));
   const acceptedRoutes = routes.filter((route) => !keys.has(`${route.videoId}:${route.accountId}`));
   if (!acceptedRoutes.length) return sendError(res, 409, '선택한 영상과 계정 조합은 이미 업로드 또는 예약되어 있습니다.', 'DUPLICATE_ROUTES', { skippedRoutes });
@@ -423,9 +441,10 @@ async function createCampaign(store, req, res) {
   const description = cleanText(body.description || metadata.description, '', 1000);
   const hashtags = Array.isArray(body.hashtags) ? body.hashtags.map((tag) => cleanText(tag, '', 40)).filter(Boolean).slice(0, 12) : (metadata.hashtags || []);
   const settings = await readSettings(store);
+  const campaignMode = body.directUpload === true ? 'live' : settings.providerMode;
   const campaign = {
-    id: createId('cmp_'), title, description, hashtags, privacy: cleanText(body.privacy, 'public', 20), scheduledAt: parsedSchedule.toISOString(), status: 'scheduled', mode: settings.providerMode, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), routes: acceptedRoutes, skippedRoutes,
-    jobs: acceptedRoutes.map((route) => ({ id: createId('job_'), accountId: route.accountId, provider: route.provider, handle: route.handle, slotNumber: route.slotNumber, videoId: route.videoId, clipMetadata: route.provider === 'naver' ? naverClip : null, instagramMetadata: route.provider === 'instagram' ? instagram : null, mode: settings.providerMode, status: 'queued', progress: 0, attempt: 0, maxAttempts: MAX_ATTEMPTS, nextRetryAt: parsedSchedule.toISOString(), lastError: null, analytics: null, logs: [{ message: '예약 작업 생성', level: 'info', createdAt: new Date().toISOString() }] }))
+    id: createId('cmp_'), title, description, hashtags, privacy: cleanText(body.privacy, 'public', 20), scheduledAt: parsedSchedule.toISOString(), status: 'scheduled', mode: campaignMode, directUpload: body.directUpload === true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), routes: acceptedRoutes, skippedRoutes,
+    jobs: acceptedRoutes.map((route) => ({ id: createId('job_'), accountId: route.accountId, provider: route.provider, handle: route.handle, slotNumber: route.slotNumber, videoId: route.videoId, clipMetadata: route.provider === 'naver' ? naverClip : null, instagramMetadata: route.provider === 'instagram' ? instagram : null, mode: campaignMode, status: 'queued', progress: 0, attempt: 0, maxAttempts: MAX_ATTEMPTS, nextRetryAt: parsedSchedule.toISOString(), lastError: null, analytics: null, logs: [{ message: body.directUpload === true ? '바로 업로드 작업 생성' : '예약 작업 생성', level: 'info', createdAt: new Date().toISOString() }] }))
   };
   campaigns.unshift(campaign);
   await writeCollection(store, 'campaigns', campaigns);
@@ -434,63 +453,23 @@ async function createCampaign(store, req, res) {
 }
 
 async function runJob(store, campaign, job, video) {
-  const result = await executeUploadJob({ job, video, campaign, maxAttempts: MAX_ATTEMPTS, retryBaseMs: RETRY_BASE_MS });
-  const comments = await readCollection(store, 'comments');
-  for (const item of result.comments) {
-    if (!comments.some((comment) => comment.externalId === item.externalId)) comments.unshift({ id: createId('comment_'), jobId: job.id, accountId: job.accountId, provider: job.provider, handle: job.handle, externalId: item.externalId, authorName: item.authorName, text: item.text, status: item.status, replies: item.replies || [], createdAt: item.createdAt, updatedAt: item.createdAt });
-  }
-  if (result.comments.length) await writeCollection(store, 'comments', comments);
-  return result.job;
+  return runJobLegacy(store, campaign, job, video);
 }
 
 async function runJobLegacy(store, campaign, job, video) {
   if (['published', 'cancelled'].includes(job.status)) return job;
-  job.status = 'uploading';
-  job.progress = 15;
-  job.attempt = (job.attempt || 0) + 1;
-  job.nextRetryAt = null;
   const settings = await readSettings(store);
   const adapterMode = ['sandbox', 'live'].includes(job.mode)
     ? job.mode
     : (['sandbox', 'live'].includes(campaign.mode) ? campaign.mode : settings.providerMode);
-  job.mode = adapterMode;
-  addJobLog(job, `${job.attempt}회차 ${adapterMode === 'live' ? '실제' : 'sandbox'} 전송 시작`);
-  const adapter = getProviderAdapter(job.provider, providerOptions(store, settings, adapterMode));
-  const publishVideo = video ? { ...video, filePath: path.join(store.uploadDir, video.storedName) } : video;
-  try {
-    const result = await adapter.publish({ job, video: publishVideo, campaign });
-    job.status = 'published';
-    job.progress = 100;
-    job.externalId = result.externalId;
-    job.externalUrl = result.externalUrl || null;
-    job.publishedAt = result.publishedAt;
-    job.mode = result.mode || adapterMode;
-    job.lastError = null;
-    job.analytics = await adapter.getAnalytics({ job, video: publishVideo, campaign });
-    addJobLog(job, '게시 완료 · 통계 수집 완료');
+  const engine = createSocialEngine(store, settings, adapterMode);
+  const result = await engine.executeJob({ job, video, campaign, mode: adapterMode });
+  if (result.comments?.length) {
     const comments = await readCollection(store, 'comments');
-    const providerComments = await adapter.listComments({ job, video: publishVideo, campaign });
-    for (const item of providerComments) {
+    for (const item of result.comments) {
       if (!comments.some((comment) => comment.externalId === item.externalId)) comments.unshift({ id: createId('comment_'), jobId: job.id, accountId: job.accountId, provider: job.provider, handle: job.handle, externalId: item.externalId, authorName: item.authorName, text: item.text, status: item.status, replies: item.replies || [], createdAt: item.createdAt, updatedAt: item.createdAt });
     }
     await writeCollection(store, 'comments', comments);
-  } catch (error) {
-    job.progress = 0;
-    job.lastError = error.message;
-    const requiresManualReview = ['PUBLISH_STATE_UNCERTAIN', 'TIKTOK_LOGIN_REQUIRED', 'TIKTOK_SECURITY_CHALLENGE'].includes(error.code);
-    if (requiresManualReview) {
-      job.status = 'failed';
-      job.nextRetryAt = null;
-      addJobLog(job, `자동 재시도 중지 · 사용자 확인 필요: ${error.message}`, 'error');
-    } else if (job.attempt < (job.maxAttempts || MAX_ATTEMPTS)) {
-      const delay = Math.min(RETRY_BASE_MS * (2 ** Math.max(job.attempt - 1, 0)), 5 * 60 * 1000);
-      job.status = 'retrying';
-      job.nextRetryAt = new Date(Date.now() + delay).toISOString();
-      addJobLog(job, `전송 실패 · ${Math.round(delay / 1000)}초 후 재시도: ${error.message}`, 'error');
-    } else {
-      job.status = 'failed';
-      addJobLog(job, `최대 재시도 횟수 초과: ${error.message}`, 'error');
-    }
   }
   return job;
 }
@@ -534,7 +513,7 @@ async function refreshAnalytics(store) {
       const adapterMode = ['sandbox', 'live'].includes(job.mode)
         ? job.mode
         : (['sandbox', 'live'].includes(campaign.mode) ? campaign.mode : settings.providerMode);
-      job.analytics = await getProviderAdapter(job.provider, providerOptions(store, settings, adapterMode)).getAnalytics({ job });
+      job.analytics = await createSocialEngine(store, settings, adapterMode).getAnalytics(job.provider, { job, campaign }, adapterMode);
     }
   }
   await writeCollection(store, 'campaigns', campaigns);
@@ -550,16 +529,16 @@ async function handleCommentAction(store, req, res, id, action) {
   const job = campaigns.flatMap((campaign) => campaign.jobs || []).find((item) => item.id === comment.jobId);
   const settings = await readSettings(store);
   const adapterMode = ['sandbox', 'live'].includes(job?.mode) ? job.mode : settings.providerMode;
-  const adapter = getProviderAdapter(comment.provider, providerOptions(store, settings, adapterMode));
+  const engine = createSocialEngine(store, settings, adapterMode);
   if (action === 'reply') {
     const body = await readRequestBody(req);
     const text = cleanText(body.text, '', 500);
     if (!text) return sendError(res, 400, '답글 내용을 입력해 주세요.', 'REPLY_REQUIRED');
-    const reply = await adapter.replyComment({ comment, text, job });
+    const reply = await engine.replyComment(comment.provider, { comment, text, job }, adapterMode);
     comment.replies = Array.isArray(comment.replies) ? comment.replies : [];
     comment.replies.unshift({ ...reply, id: createId('reply_'), authorName: '업로드 관리자' });
   } else {
-    comment.status = action === 'hide' ? (await adapter.hideComment({ comment, job })).status : 'visible';
+    comment.status = action === 'hide' ? (await engine.hideComment(comment.provider, { comment, job }, adapterMode)).status : 'visible';
   }
   comment.updatedAt = new Date().toISOString();
   await writeCollection(store, 'comments', comments);
@@ -605,6 +584,7 @@ function startScheduler(store, intervalMs = 15000) {
 
 function createServer(options = {}) {
   const store = options.store || createStore(options.dataDir || process.env.UPLOAD_DESK_DATA_DIR || ROOT);
+  store.providerCookieLoader = options.providerCookieLoader || store.providerCookieLoader || null;
   const server = http.createServer(async (req, res) => {
     try {
       await ensureStorage(store);
@@ -615,7 +595,7 @@ function createServer(options = {}) {
       if (req.method === 'POST' && pathname === '/api/videos') return handleUpload(store, req, res);
       const videoMatch = pathname.match(/^\/api\/videos\/([^/]+)$/);
       if (req.method === 'DELETE' && videoMatch) return handleDeleteVideo(store, res, videoMatch[1]);
-      if (req.method === 'GET' && pathname === '/api/accounts') return sendJson(res, 200, { accounts: await readAccounts(store), providers: PROVIDERS });
+      if (req.method === 'GET' && pathname === '/api/accounts') return sendJson(res, 200, { accounts: await readAccounts(store), providers: socialProviderCatalog() });
       if (req.method === 'POST' && pathname === '/api/accounts') return createAccount(store, req, res);
       const accountRoutingMatch = pathname.match(/^\/api\/accounts\/([^/]+)\/routing$/);
       if (req.method === 'PUT' && accountRoutingMatch) return updateAccountRouting(store, req, res, accountRoutingMatch[1]);

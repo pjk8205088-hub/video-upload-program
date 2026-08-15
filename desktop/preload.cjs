@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   verifyLogin: (provider) => ipcRenderer.invoke('auth:verify-login', provider),
   restoreAuthSessions: () => ipcRenderer.invoke('auth:restore-all'),
+  prepareUploadPage: (provider) => ipcRenderer.invoke('auth:prepare-upload', provider),
   openUploadPage: (provider) => ipcRenderer.invoke('auth:open-upload', provider),
   uploadNaverClips: (payload) => ipcRenderer.invoke('naver:upload-clips', payload),
   onNaverClipProgress: (callback) => {

@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, session } = require('electron');
 const { PROVIDER_KEYS, getProviderConfig, hasProviderAuthCookieInSession, restoreProviderAuthSessions, clearProviderAuthCookies } = require('../lib/auth');
+const { electronCookiesToPlaywright } = require('../lib/browser-cookies');
 
 let createServer;
 let ensureStorage;
@@ -11,6 +12,7 @@ let localServer;
 let autoUpdater;
 let activeNaverUploadWindow;
 const activeAuthFlows = new Map();
+const preparedUploadWindows = new Map();
 const AUTH_PARTITION = 'persist:upload-desk-auth';
 
 app.setName('Upload Desk');
@@ -54,6 +56,18 @@ async function clearProviderAuth(provider) {
   return result;
 }
 
+async function providerUploadCookies(provider) {
+  const config = getProviderConfig(provider);
+  if (!config) return [];
+  const currentAuthSession = authSession();
+  const cookieGroups = [];
+  for (const url of config.cookieUrls || []) {
+    const cookies = await currentAuthSession.cookies.get({ url }).catch(() => []);
+    cookies.forEach((cookie) => cookieGroups.push({ cookie, url }));
+  }
+  return electronCookiesToPlaywright(cookieGroups);
+}
+
 function verifyProviderLogin(provider) {
   const config = getProviderConfig(provider);
   if (!config || !mainWindow) return Promise.resolve({ verified: false, reason: 'unsupported' });
@@ -91,19 +105,68 @@ function verifyProviderLogin(provider) {
   return promise;
 }
 
-async function openProviderUpload(provider) {
+function uploadReadinessScript(provider) {
+  const probes = {
+    instagram: `/만들기|Create|새 게시물|New post/i.test(document.body?.innerText || '') || Boolean(document.querySelector('input[type="file"]'))`,
+    tiktok: `/영상 선택|Select video|업로드|Upload/i.test(document.body?.innerText || '') || Boolean(document.querySelector('input[type="file"]'))`,
+    naver: `/업로드|동영상 업로드/i.test(document.body?.innerText || '') || Boolean(document.querySelector('input[type="file"]'))`,
+    facebook: `/사진\\/동영상|Photo\\/video|Photo\\/Video|무슨 생각을 하고 계신가요|What's on your mind/i.test(document.body?.innerText || '')`
+  };
+  return `(() => { if (document.readyState === 'loading') return false; return Boolean(${probes[provider] || 'false'}); })()`;
+}
+
+async function waitForUploadPageReady(uploadWindow, provider, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && !uploadWindow.isDestroyed()) {
+    const ready = await uploadWindow.webContents.executeJavaScript(uploadReadinessScript(provider), true).catch(() => false);
+    if (ready) return true;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return false;
+}
+
+function closePreparedUploadWindow(provider) {
+  const uploadWindow = preparedUploadWindows.get(provider);
+  preparedUploadWindows.delete(provider);
+  if (uploadWindow && !uploadWindow.isDestroyed()) uploadWindow.close();
+}
+
+async function prepareProviderUpload(provider, show = false) {
   const config = getProviderConfig(provider);
-  if (!config?.uploadUrl || !mainWindow) return { opened: false, reason: 'unsupported' };
+  if (!config?.uploadUrl || !mainWindow) return { opened: false, ready: false, reason: 'unsupported' };
   const currentAuthSession = authSession();
-  if (!await hasProviderAuthCookieInSession(currentAuthSession, provider)) return { opened: false, reason: 'login_required' };
-  const uploadWindow = new BrowserWindow({ parent: mainWindow, width: 1440, height: 920, minWidth: 1080, minHeight: 720, title: `${provider} 동영상 업로드`, autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: AUTH_PARTITION } });
+  if (!await hasProviderAuthCookieInSession(currentAuthSession, provider)) {
+    closePreparedUploadWindow(provider);
+    return { opened: false, ready: false, reason: 'login_required' };
+  }
+
+  const existing = preparedUploadWindows.get(provider);
+  if (existing && !existing.isDestroyed()) {
+    if (show) { existing.show(); existing.focus(); }
+    return { opened: show, ready: true, provider, url: existing.webContents.getURL(), reused: true };
+  }
+
+  const uploadWindow = new BrowserWindow({ parent: mainWindow, show: false, width: 1440, height: 920, minWidth: 1080, minHeight: 720, title: `${provider} 동영상 업로드`, autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: AUTH_PARTITION } });
+  preparedUploadWindows.set(provider, uploadWindow);
+  uploadWindow.on('closed', () => { if (preparedUploadWindows.get(provider) === uploadWindow) preparedUploadWindows.delete(provider); });
   try {
     await uploadWindow.loadURL(config.uploadUrl);
-    return { opened: true, provider, url: config.uploadUrl };
+    const ready = await waitForUploadPageReady(uploadWindow, provider);
+    const stillLoggedIn = await hasProviderAuthCookieInSession(currentAuthSession, provider);
+    if (!ready || !stillLoggedIn) {
+      closePreparedUploadWindow(provider);
+      return { opened: false, ready: false, provider, reason: stillLoggedIn ? 'upload_page_not_ready' : 'login_required' };
+    }
+    if (show) { uploadWindow.show(); uploadWindow.focus(); }
+    return { opened: show, ready: true, provider, url: uploadWindow.webContents.getURL() };
   } catch (error) {
-    if (!uploadWindow.isDestroyed()) uploadWindow.close();
-    return { opened: false, provider, reason: 'load_failed', message: error.message };
+    closePreparedUploadWindow(provider);
+    return { opened: false, ready: false, provider, reason: 'load_failed', message: error.message };
   }
+}
+
+async function openProviderUpload(provider) {
+  return prepareProviderUpload(provider, true);
 }
 
 function storedVideoPath(storedName) {
@@ -268,9 +331,14 @@ function registerIpc() {
       }))
     };
   });
+  ipcMain.handle('auth:prepare-upload', (_event, provider) => prepareProviderUpload(String(provider || '').trim().toLowerCase(), false));
   ipcMain.handle('auth:open-upload', (_event, provider) => openProviderUpload(String(provider || '').trim().toLowerCase()));
   ipcMain.handle('naver:upload-clips', (_event, payload) => runNaverClipAutomation(payload));
-  ipcMain.handle('auth:force-logout', (_event, provider) => clearProviderAuth(String(provider || '').trim().toLowerCase()));
+  ipcMain.handle('auth:force-logout', async (_event, provider) => {
+    const providerKey = String(provider || '').trim().toLowerCase();
+    closePreparedUploadWindow(providerKey);
+    return clearProviderAuth(providerKey);
+  });
   ipcMain.handle('speech:speak', (_event, text) => {
     if (process.platform !== 'win32' || !String(text || '').trim()) return { supported: false };
     const script = "$ErrorActionPreference='SilentlyContinue'; Add-Type -AssemblyName System.Speech; $synth=New-Object System.Speech.Synthesis.SpeechSynthesizer; $voices=$synth.GetInstalledVoices(); $female=$voices | Where-Object { $_.VoiceInfo.Gender.ToString() -eq 'Female' -and $_.VoiceInfo.Culture.Name -match '^ko' } | Select-Object -First 1; if (!$female) { $female=$voices | Where-Object { $_.VoiceInfo.Gender.ToString() -eq 'Female' } | Select-Object -First 1 }; if ($female) { $synth.SelectVoice($female.VoiceInfo.Name) }; $synth.Rate=0; $synth.Volume=100; $synth.Speak([Console]::In.ReadToEnd()); $synth.Dispose();";
@@ -315,7 +383,7 @@ async function startLocalServer() {
   process.env.UPLOAD_DESK_DATA_DIR = path.join(app.getPath('userData'), 'storage');
   ({ createServer, ensureStorage } = require('../server'));
   await ensureStorage();
-  localServer = createServer({ scheduler: true });
+  localServer = createServer({ scheduler: true, providerCookieLoader: providerUploadCookies });
   await new Promise((resolve) => localServer.listen(0, '127.0.0.1', resolve));
   return localServer.address().port;
 }

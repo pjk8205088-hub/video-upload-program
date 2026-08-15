@@ -35,14 +35,19 @@ export class InstagramPublishUncertainError extends Error {
 export class InstagramClient {
   constructor({
     userDataDir = path.resolve(process.cwd(), ".instagram-browser"),
+    browserChannel = "chrome",
     headless = false,
     timeoutMs = 120_000,
-    logger = console
+    logger = console,
+    initialCookies = []
   } = {}) {
     this.userDataDir = path.resolve(userDataDir);
+    this.browserChannel = String(browserChannel || "chrome").toLowerCase();
+    if (!["chrome", "msedge", "chromium"].includes(this.browserChannel)) throw new Error(`지원하지 않는 브라우저 채널입니다: ${browserChannel}`);
     this.headless = headless;
     this.timeoutMs = timeoutMs;
     this.logger = logger;
+    this.initialCookies = Array.isArray(initialCookies) ? initialCookies : [];
     this.context = null;
     this.page = null;
   }
@@ -50,13 +55,16 @@ export class InstagramClient {
   async start() {
     if (this.context) return this;
     try {
-      this.context = await chromium.launchPersistentContext(this.userDataDir, {
+      const launchOptions = {
         headless: this.headless,
         viewport: { width: 1440, height: 1000 }
-      });
+      };
+      if (this.browserChannel !== "chromium") launchOptions.channel = this.browserChannel;
+      this.context = await chromium.launchPersistentContext(this.userDataDir, launchOptions);
+      if (this.initialCookies.length) await this.context.addCookies(this.initialCookies);
     } catch (error) {
       if (/executable|browser.*not found|playwright install/i.test(error.message)) {
-        throw new Error("Playwright Chromium이 없습니다. `npx playwright install chromium`을 실행하세요.");
+        throw new Error(`${this.browserChannel} 브라우저를 찾지 못했습니다. Chrome 또는 Edge를 설치해 주세요.`);
       }
       throw error;
     }

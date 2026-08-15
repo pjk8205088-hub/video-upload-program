@@ -9,7 +9,7 @@
     "start:desktop": "electron .",
     "dist:desktop": "electron-builder --win nsis portable",
     "dist:installer": "electron-builder --win nsis",
-    "test": "node --test tests/server.test.js tests/providers.test.js tests/auth.test.js tests/upload.test.js tests/login-upload.test.js",
+    "test": "node --test tests/server.test.js tests/providers.test.js tests/auth.test.js tests/browser-cookies.test.js tests/upload.test.js tests/login-upload.test.js tests/social-engine.test.js integrations/naver-clip/tests/upload-state.test.js",
     "test:auth": "node --test tests/auth.test.js",
     "test:login": "node --test tests/auth.test.js",
     "test:upload": "node --test tests/upload.test.js",
