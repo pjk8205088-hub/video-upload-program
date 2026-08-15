@@ -336,7 +336,7 @@ export class NaverClipClient {
       const bodyText = normalizeCreatorText(await this.page.locator("body").innerText().catch(() => ""));
       const status = classifyRegistrationState({ url: this.page.url(), bodyText, itemText, visibility: video.visibility });
       if (status !== "uncertain") return { status, itemText, evidence: "content-list" };
-      if (successMessageSeen && /\/web\/contents(?:\/clips)?/i.test(this.page.url()) && await this.#hasContentListItem()) {
+      if (successMessageSeen && /\/web\/contents(?:\/clips)?/i.test(this.page.url()) && await this.#hasContentListItem(needles)) {
         return { status: video.visibility === "private" ? "private" : "published", itemText: "", evidence: "success-and-content-list" };
       }
       await this.page.waitForTimeout(1_500);
@@ -345,7 +345,7 @@ export class NaverClipClient {
     return { status: "uncertain", itemText: "", evidence: successMessageSeen ? "success-message-only" : "none" };
   }
 
-  async #hasContentListItem() {
+  async #hasContentListItem(needles = []) {
     const candidates = this.page.locator('tr, [role="row"], li, article, [class*="item"], [class*="card"]');
     const count = await candidates.count().catch(() => 0);
     if (count < 2) return false;
@@ -353,7 +353,8 @@ export class NaverClipClient {
       const row = candidates.nth(index);
       const text = normalizeCreatorText(await row.innerText().catch(() => ""));
       if (!text || /콘텐츠|카테고리|상태|날짜|조회수/.test(text)) continue;
-      if (await row.locator('video, img, button, a').count().catch(() => 0)) return true;
+      const matchesVideo = needles.some((needle) => needle && text.includes(needle));
+      if (matchesVideo && await row.locator('video, img, button, a').count().catch(() => 0)) return true;
     }
     return false;
   }

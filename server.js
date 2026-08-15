@@ -442,7 +442,7 @@ async function createCampaign(store, req, res) {
   const keys = existingRouteKeys(campaigns, { directUpload: body.directUpload === true });
   const skippedRoutes = routes.filter((route) => keys.has(`${route.videoId}:${route.accountId}`));
   const acceptedRoutes = routes.filter((route) => !keys.has(`${route.videoId}:${route.accountId}`));
-  if (!acceptedRoutes.length) return sendError(res, 409, '선택한 영상과 계정 조합은 이미 업로드 또는 예약되어 있습니다.', 'DUPLICATE_ROUTES', { skippedRoutes });
+  if (!acceptedRoutes.length) return sendError(res, 409, '선택한 영상과 계정 조합은 이미 업로드되어 있습니다.', 'DUPLICATE_ROUTES', { skippedRoutes });
   const firstVideo = videos.find((video) => video.id === acceptedRoutes[0].videoId);
   const metadata = firstVideo?.aiMetadata || {};
   const naverClip = cleanNaverClipMetadata(body.naverClip || metadata.naverClip);

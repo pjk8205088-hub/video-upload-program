@@ -51,7 +51,7 @@
         </section>
 
         <section class="panel" id="routing">
-          <div class="panel-head"><div><span class="eyebrow">02 / ACCOUNT ROUTING</span><h2>계정별 번호 스위치</h2><p>채널 카드에서 올릴 영상 번호만 체크하세요. 체크 상태는 로컬에 저장되어 다음 예약에도 유지됩니다.</p></div><button class="button button-outline" id="openAccountButton" type="button">+ SNS 계정 연결</button></div>
+          <div class="panel-head"><div><span class="eyebrow">02 / ACCOUNT ROUTING</span><h2>계정별 번호 스위치</h2></div><button class="button button-outline" id="openAccountButton" type="button">+ SNS 계정 연결</button></div>
           <div id="accountGrid" class="account-grid"></div>
           <div class="route-summary"><div><span class="eyebrow">CURRENT ROUTES</span><strong id="routeSummary">0개 경로 선택</strong></div><div id="routeChips" class="route-chips"></div></div>
         </section>
@@ -67,9 +67,9 @@
               <label>설명 / 캡션<textarea id="campaignDescription" rows="4" maxlength="1000" placeholder="채널에 공통으로 보낼 설명"></textarea></label>
               <label>해시태그<input id="campaignHashtags" maxlength="400" placeholder="#영상 #콘텐츠 #브랜드"></label>
               <section id="instagramOptions" class="instagram-options" hidden>
-                <div class="instagram-head"><div><span class="eyebrow">INSTAGRAM REELS FORMAT</span><strong>인스타그램 릴스 자동 설정</strong><p>Instagram 계정에 연결된 프로그램 저장 슬롯 1~10번을 사용합니다.</p></div><button class="button button-soft" id="generateInstagramButton" type="button">✦ 릴스 문구 자동 생성</button></div>
+                <div class="instagram-head"><div><span class="eyebrow">FACEBOOK VIDEO FORMAT</span><strong>페이스북 동영상 자동 설정</strong><p>Facebook 계정에 연결된 프로그램 저장 슬롯 1~10번을 사용합니다.</p></div><button class="button button-soft" id="generateInstagramButton" type="button">✦ 페이스북 글 자동 생성</button></div>
                 <label>릴스 캡션<textarea id="instagramCaption" rows="4" maxlength="2200" placeholder="인스타그램 릴스에 표시할 캡션"></textarea><small class="field-hint">최대 2,200자 · 업로드 전 캡션과 해시태그를 확인하세요.</small></label>
-                <div class="instagram-check-row"><label><input id="instagramShareToFeed" type="checkbox" checked> 피드에도 공유</label><label><input id="instagramAllowComments" type="checkbox" checked> 댓글 허용</label></div>
+                <div class="instagram-check-row"><label><input id="instagramShareToFeed" type="checkbox" checked> 피드에도 공유</label><label><input id="instagramAllowComments" type="checkbox" checked> 댓글 허용</label><label>공개 범위<select id="facebookPrivacy"><option value="public">전체 공개</option><option value="unlisted">일부 공개</option><option value="private">비공개</option></select></label></div>
                 <small id="instagramStatusHint" class="instagram-status-hint">Instagram 연결 영상이 있으면 릴스 게시 설정을 자동으로 준비합니다.</small>
                 <button class="button instagram-publish-button" id="publishInstagramButton" type="button" disabled>게시 <span>→</span></button>
               </section>
@@ -85,7 +85,7 @@
                 <button class="button naver-clip-register-button" id="registerNaverClipButton" type="button" disabled>네이버 클립 최종 등록 <span>→</span></button>
               </section>
               <div class="form-grid"><label>예약 시각<input id="scheduleDate" type="datetime-local" required></label><label>공개 범위<select id="privacySelect"><option value="public">공개</option><option value="unlisted">일부 공개</option><option value="private">비공개</option></select></label></div>
-              <button class="button button-lime submit-button" type="submit">선택된 번호를 예약에 등록 <span>→</span></button>
+              <button class="button button-lime submit-button" type="submit">선택한 SNS에 바로 업로드 <span>→</span></button>
             </form>
           </div>
           <div class="panel-subhead" hidden><span class="eyebrow">OUTBOX</span><strong>예약 · 전송 작업</strong><button class="button button-ghost" id="refreshCampaigns" type="button">새로고침</button></div>

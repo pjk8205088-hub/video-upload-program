@@ -62,3 +62,17 @@ html,body{background:#fff;color:#111827}body{font-weight:400}.app-shell{backgrou
 .naver-clip-upload-status{display:flex;align-items:flex-start;gap:8px;margin-top:11px;padding:9px 10px;border:1px solid #cfe7d4;border-radius:5px;background:#f7fcf8;color:#3f5d48;font-size:8px;line-height:1.5}.naver-clip-upload-status i{flex:none;width:7px;height:7px;margin-top:2px;border-radius:50%;background:#94a3b8;box-shadow:0 0 0 3px rgba(148,163,184,.12)}.naver-clip-upload-status[data-state="preparing"] i,.naver-clip-upload-status[data-state="uploading"] i{background:#e0b800;box-shadow:0 0 0 3px rgba(224,184,0,.15);animation:naver-upload-pulse 1.1s ease-in-out infinite}.naver-clip-upload-status[data-state="published"]{border-color:#86d5a0;background:#effbf2;color:#166534}.naver-clip-upload-status[data-state="published"] i{background:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.13)}.naver-clip-upload-status[data-state="failed"]{border-color:#f2b8b5;background:#fff7f7;color:#b42318}.naver-clip-upload-status[data-state="failed"] i{background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.12)}@keyframes naver-upload-pulse{50%{opacity:.35;transform:scale(.78)}}@media (prefers-reduced-motion:reduce){.naver-clip-upload-status i{animation:none!important}}
  .account-placeholder{border-style:dashed;background:#fbfcfe}.account-placeholder-copy{margin:18px 0 12px;color:#667085;font-size:10px}.account-placeholder-button{width:100%}.account-card.provider-tiktok.account-placeholder{border-color:#d8c5ff}.account-card.provider-tiktok.account-placeholder .provider-code{background:#c9a7ff;color:#32145f}
 .naver-product-info{display:grid;grid-template-columns:1fr 1.5fr 1.5fr;gap:10px;margin:12px 0;padding:12px;border:1px solid #d7e9df;border-radius:8px;background:#f5fcf7}.naver-product-info label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:700}.naver-product-info input,.naver-product-info select{min-height:34px;padding:7px 9px;border:1px solid #cbd8d1;border-radius:6px;background:#fff;color:#17231d}@media(max-width:800px){.naver-product-info{grid-template-columns:1fr}}
+.account-footer{display:none}
+.account-reset-footer{display:flex}.account-reset-footer>span,.account-reset-footer>[data-remove-account]{display:none}.account-reset-button{margin-left:auto;padding:6px 12px;font-size:9px}
+.login-copy{display:none}
+.login-page .login-copy{display:none!important}
+.login-page .login-copy{visibility:hidden;height:0;margin:0;padding:0;border:0;overflow:hidden}
+.login-facebook .login-copy{display:none!important;visibility:hidden;height:0;margin:0;padding:0;overflow:hidden}
+.route-preview{display:none!important}
+.global-search{display:none!important}
+.drop-strip{display:none!important}
+.route-summary{display:none!important}
+.storage-meter,.side-footer,.login-security-strip{display:none!important}
+.topbar p{display:none!important}
+.top-actions{display:none!important}
+#schedule .naver-clip-check:has(#naverClipSchedule),#schedule .naver-clip-check:has(#naverClipPrivateSchedule),#schedule .form-grid:has(#scheduleDate),#schedule .panel-subhead,#schedule #campaignList,#schedule #campaignEmpty,#calendarPanel,.nav-link[href="#schedule"],.stats-row article:nth-child(3){display:none!important}
