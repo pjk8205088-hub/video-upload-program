@@ -13,7 +13,7 @@
     <header class="titlebar">
       <div class="brand-lockup"><span class="brand-mark"><i></i><i></i><i></i></span><div><strong>UPLOAD DESK</strong><small>10-SLOT PUBLISHING BOARD</small></div></div>
       <label class="global-search" for="workspaceSearch"><span aria-hidden="true">⌕</span><input id="workspaceSearch" type="search" placeholder="영상, 계정, 예약 검색" autocomplete="off"><kbd>CTRL K</kbd></label>
-      <div class="titlebar-mode"><span class="led"></span><span>LOCAL / SANDBOX</span></div>
+      <div class="titlebar-mode"><span class="led"></span><span>UPLOAD READY</span></div>
       <div class="window-controls" aria-label="창 제어"><button data-window-action="minimize" aria-label="최소화">—</button><button data-window-action="maximize" aria-label="최대화">□</button><button data-window-action="close" aria-label="닫기">×</button></div>
     </header>
     <div class="app-body">
@@ -25,28 +25,28 @@
           <a class="nav-link" href="#schedule"><span>03</span>예약 작업<b id="navCampaignCount">0</b></a>
           <a class="nav-link" href="#insights"><span>04</span>통계 · 댓글</a>
           <a class="nav-link" href="#settings"><span>06</span>환경설정</a>
-          <div class="nav-submenu" aria-label="4개 SNS 계정 로그인"><span class="nav-submenu-title">SNS 로그인 4개</span>
+          <div class="nav-submenu" aria-label="4개 SNS 계정 로그인" hidden><span class="nav-submenu-title">SNS 로그인 4개</span>
             <a class="nav-sub-link" href="#login-instagram" data-login-provider="instagram"><i>IG</i><span>Instagram 로그인</span></a>
             <a class="nav-sub-link" href="#login-tiktok" data-login-provider="tiktok"><i>TT</i><span>TikTok 로그인</span></a>
             <a class="nav-sub-link" href="#login-naver" data-login-provider="naver"><i>NV</i><span>네이버 클립 로그인</span></a>
             <a class="nav-sub-link" href="#login-facebook" data-login-provider="facebook"><i>FB</i><span>Facebook 로그인</span></a>
           </div>
         </nav>
-        <div class="sidebar-note"><span class="eyebrow">ROUTING RULE</span><strong>번호가 곧 목적지입니다.</strong><p>계정의 1~10 번호를 체크하면 해당 슬롯 영상만 그 채널로 이동합니다.</p></div>
+        <div class="sidebar-note" hidden><span class="eyebrow">ROUTING RULE</span><strong>번호가 곧 목적지입니다.</strong><p>계정의 1~10 번호를 체크하면 해당 슬롯 영상만 그 채널로 이동합니다.</p></div>
         <div class="sidebar-status" aria-label="운영 상태"><div class="sidebar-status-head"><span class="eyebrow">OPERATIONS STATUS</span><span class="status-pulse"></span></div><div class="status-inline-row"><a class="status-inline-item" href="#login-instagram"><span class="status-light" id="instagramLoginLight"></span><span><strong>Instagram 로그인</strong><small id="instagramLoginStatus">연결 필요</small></span><b id="instagramLoginCode">RED</b></a><span class="status-inline-divider" aria-hidden="true">·</span><a class="status-inline-item" href="#slots"><span class="status-light" id="uploadReadyLight"></span><span><strong>업로드 준비</strong><small id="uploadReadyStatus">영상·라우팅 확인 필요</small></span><b id="uploadReadyCode">RED</b></a></div></div>
         <div class="storage-meter"><div><span>LOCAL STORAGE</span><b id="storagePercent">0%</b></div><div class="meter"><i id="storageBar"></i></div><small id="storageLabel">0 B / 10 GB 사용 중</small></div>
         <div class="side-footer"><span class="avatar">U</span><div><strong>업로드 관리자</strong><small>Windows workspace</small></div></div>
       </aside>
 
       <main class="main-content">
-        <header class="topbar"><div><span class="eyebrow">MY UPLOAD WORKSPACE</span><h1>영상 등록부터 게시까지 한 번에 관리하세요.</h1><p>슬롯에 영상을 보관하고, 원하는 채널에 번호를 연결해 예약을 완료합니다.</p></div><div class="top-actions"><span class="sandbox-pill"><i></i> MOCK ADAPTER ACTIVE</span><button class="button button-dark" data-scroll-target="#schedule">+ 예약 만들기</button></div></header>
+        <header class="topbar"><div><span class="eyebrow">MY UPLOAD WORKSPACE</span><h1>영상 등록부터 게시까지 한 번에 관리하세요.</h1><p>슬롯에 영상을 보관하고, 원하는 채널에 번호를 연결해 예약을 완료합니다.</p></div><div class="top-actions"><button class="button button-dark" data-scroll-target="#schedule">+ 예약 만들기</button></div></header>
 
         <section class="stats-row" aria-label="작업 요약"><article><span>보관 영상</span><strong id="statVideoCount">0</strong><small>10개 슬롯 중</small></article><article><span>연결 채널</span><strong id="statAccountCount">0</strong><small>4개 서비스</small></article><article class="accent-stat"><span>예약 작업</span><strong id="statCampaignCount">0</strong><small>전송 준비 중</small></article><article><span>누적 조회수</span><strong id="statViewCount">0</strong><small>게시 후 자동 집계</small></article></section>
 
         <section class="panel" id="slots">
           <div class="panel-head"><div><span class="eyebrow">01 / VIDEO STORAGE</span><h2>내 영상 보관함</h2><p>영상마다 고정 번호를 부여합니다. 슬롯을 교체하면 연결된 미게시 작업은 자동 취소됩니다.</p></div><div class="panel-tools"><span class="count-chip"><b id="slotCount">0</b> / 10 보관</span></div></div>
           <div id="slotGrid" class="slot-grid"></div>
-          <div class="drop-strip" id="dropZone" tabindex="0" role="button" aria-label="동영상 여러 개 추가"><div class="drop-icon">↥</div><div><strong>여기에 동영상을 놓으세요</strong><span>비어 있는 슬롯부터 순서대로 저장 · MP4 / MOV / WebM / MKV · 파일당 최대 2 GB</span></div><button class="button button-dark" id="chooseButton" type="button">파일 선택</button><input id="fileInput" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.webm,.mkv" multiple hidden></div>
+          <div class="drop-strip" id="dropZone" tabindex="0" role="button" aria-label="동영상 여러 개 추가"><div class="drop-icon">↥</div><div class="drop-copy" aria-hidden="true"></div><button class="button button-dark" id="chooseButton" type="button">파일 선택</button><input id="fileInput" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.webm,.mkv" multiple hidden></div>
           <div id="queueSection" class="upload-queue" hidden><div class="eyebrow">LIVE UPLOAD QUEUE <span id="queueCount">0</span></div><div id="queueList"></div></div>
         </section>
 
@@ -56,7 +56,7 @@
           <div class="route-summary"><div><span class="eyebrow">CURRENT ROUTES</span><strong id="routeSummary">0개 경로 선택</strong></div><div id="routeChips" class="route-chips"></div></div>
         </section>
 
-        <section class="panel quick-publish-panel" id="quick-publish" hidden><div class="panel-head compact"><div><span class="eyebrow">03 / QUICK DESTINATION</span><h2>올릴 SNS를 먼저 고르세요</h2><p>현재 선택한 슬롯을 연결할 SNS를 클릭하면 활성화됩니다. 계정이 없으면 해당 로그인 페이지를 바로 엽니다.</p></div><span class="voice-badge"><i></i> 음성 완료 알림 ON</span></div><div id="quickProviderBar" class="quick-provider-bar"></div><div class="quick-publish-footer"><span><b id="quickPublishSummary">활성 SNS 0개</b> · 활성화 후 아래에서 예약을 만들면 선택한 번호가 전송됩니다.</span><span class="quick-voice-note"><img src="/assets/upload-complete.svg" alt="업로드 완료 음성 안내" title="업로드 완료 음성 안내"></span></div></section>
+        <section class="panel quick-publish-panel" id="quick-publish" hidden><div class="panel-head compact"><div><span class="eyebrow">03 / QUICK DESTINATION</span><h2>올릴 SNS를 먼저 고르세요</h2><p>현재 선택한 슬롯을 연결할 SNS를 클릭하면 활성화됩니다. 계정이 없으면 해당 로그인 페이지를 바로 엽니다.</p></div></div><div id="quickProviderBar" class="quick-provider-bar"></div><div class="quick-publish-footer"><span><b id="quickPublishSummary">활성 SNS 0개</b> · 활성화 후 아래에서 예약을 만들면 선택한 번호가 전송됩니다.</span></div></section>
 
         <section class="panel" id="schedule">
           <div class="panel-head"><div><span class="eyebrow">03 / SCHEDULE & DISPATCH</span><h2>자동 업로드 전 준비물 페이지</h2><p>선택한 영상·계정·게시 설정을 확인하면 자동 업로드에 필요한 준비가 완료됩니다.</p></div><span class="mode-badge"><i></i> OAUTH SEAM READY</span></div>
@@ -76,26 +76,27 @@
               <section id="naverClipOptions" class="naver-clip-options" hidden>
                 <div class="naver-clip-head"><div><span class="eyebrow">NAVER CLIP FORMAT</span><strong>네이버 클립 자동 설정</strong><p>프로그램에 저장된 1~10번 영상 중 네이버 계정에 연결된 슬롯을 사용합니다.</p></div><button class="button button-soft" id="generateNaverClipButton" type="button">✦ 클립 문구·카테고리 자동 생성</button></div>
                 <label>클립 설명<textarea id="naverClipDescription" rows="3" maxlength="300" placeholder="네이버 클립에 표시할 설명"></textarea><small class="field-hint">최대 300자 · 업로드 시 네이버 클립용 문구로 사용됩니다.</small></label>
+                <div class="naver-product-info" id="naverProductInfo"><label>상품정보<select id="naverProductSelect"><option value="">상품정보 없이 등록</option><option value="product-review">상품 리뷰</option><option value="product-guide">상품 사용법</option><option value="product-shopping">쇼핑 상품 소개</option></select></label><label>상품명<input id="naverProductName" type="text" maxlength="120" placeholder="선택한 상품명 또는 직접 입력"></label><label>상품 링크<input id="naverProductUrl" type="url" maxlength="500" placeholder="상품 페이지 주소(선택)"></label></div>
                 <div class="naver-clip-category-grid"><label>1차 카테고리<select id="naverClipCategoryPrimary"><option value="">자동 추천 대기</option><option value="쇼핑">쇼핑</option><option value="라이프 이벤트">라이프 이벤트</option><option value="여행">여행</option><option value="푸드">푸드</option><option value="뷰티">뷰티</option><option value="패션">패션</option><option value="스포츠">스포츠</option><option value="엔터테인먼트">엔터테인먼트</option><option value="반려동물">반려동물</option><option value="교육">교육</option></select></label><label>2차 카테고리<select id="naverClipCategorySecondary"><option value="">자동 추천 대기</option><option value="상품 정보">상품 정보</option><option value="라이프 이벤트">라이프 이벤트</option><option value="여행지">여행지</option><option value="레시피">레시피</option><option value="뷰티 팁">뷰티 팁</option><option value="스타일링">스타일링</option><option value="스포츠">스포츠</option><option value="댄스">댄스</option><option value="반려동물">반려동물</option><option value="노하우">노하우</option></select></label></div>
                 <small id="naverClipCategoryHint" class="naver-clip-category-hint">네이버 클립 연결 영상이 있으면 자동 추천값이 표시됩니다.</small>
                 <div class="naver-clip-auto-flow"><span>자동 등록 흐름</span><strong>설명 → 커버 → 카테고리 → 정보태그 쇼핑 → 전체 공개 → 등록</strong></div>
-                <div class="naver-clip-publish-settings"><div class="naver-clip-setting-head"><strong>공개 설정</strong><span>등록 전 마지막 확인</span></div><label class="naver-clip-check"><input id="naverClipPublic" type="checkbox" checked><span><b>전체 공개</b><small>이 동영상을 모두 볼 수 있어요.</small></span></label><label class="naver-clip-check"><input id="naverClipSchedule" type="checkbox"><span><b>등록 예약</b><small>예약한 시간에 자동으로 등록합니다.</small></span></label><label class="naver-clip-check"><input id="naverClipPrivateSchedule" type="checkbox"><span><b>비공개 예약</b><small>예약한 시간에 비공개로 등록합니다.</small></span></label><div class="naver-clip-choice-row"><fieldset><legend>재생 국가</legend><label><input name="naverClipCountry" type="radio" value="all" checked> 전체</label><label><input name="naverClipCountry" type="radio" value="kr"> 대한민국에서만 재생</label></fieldset><fieldset><legend>댓글 허용</legend><label><input name="naverClipComments" type="radio" value="allow" checked> 허용</label><label><input name="naverClipComments" type="radio" value="deny"> 허용 안함</label></fieldset></div></div>
-                <button class="button naver-clip-register-button" id="registerNaverClipButton" type="button" disabled>등록 <span>→</span></button>
+                <div class="naver-clip-publish-settings"><div class="naver-clip-setting-head"><strong>공개 설정</strong><span>등록 전 마지막 확인</span></div><label class="naver-clip-check"><input id="naverClipPublic" type="checkbox" checked><span><b>전체 공개</b><small>이 동영상을 모두 볼 수 있어요.</small></span></label><label class="naver-clip-check"><input id="naverClipSchedule" type="checkbox"><span><b>등록 예약</b><small>예약한 시간에 자동으로 등록합니다.</small></span></label><label class="naver-clip-check"><input id="naverClipPrivateSchedule" type="checkbox"><span><b>비공개 예약</b><small>예약한 시간에 비공개로 등록합니다.</small></span></label><div class="naver-clip-choice-row"><fieldset><legend>재생 국가</legend><label><input name="naverClipCountry" type="radio" value="all" checked> 전체</label><label><input name="naverClipCountry" type="radio" value="kr"> 대한민국에서만 재생</label></fieldset><fieldset><legend>댓글 허용</legend><label><input name="naverClipComments" type="radio" value="allow"> 허용</label><label><input name="naverClipComments" type="radio" value="deny" checked> 허용 안함</label></fieldset></div></div>
+                <div id="naverClipUploadStatus" class="naver-clip-upload-status" data-state="idle" aria-live="polite"><i aria-hidden="true"></i><span>네이버 로그인과 영상 슬롯 연결이 필요합니다.</span></div>
+                <button class="button naver-clip-register-button" id="registerNaverClipButton" type="button" disabled>네이버 클립 최종 등록 <span>→</span></button>
               </section>
               <div class="form-grid"><label>예약 시각<input id="scheduleDate" type="datetime-local" required></label><label>공개 범위<select id="privacySelect"><option value="public">공개</option><option value="unlisted">일부 공개</option><option value="private">비공개</option></select></label></div>
               <button class="button button-lime submit-button" type="submit">선택된 번호를 예약에 등록 <span>→</span></button>
             </form>
           </div>
-          <div class="panel-subhead"><span class="eyebrow">OUTBOX</span><strong>예약 · 전송 작업</strong><button class="button button-ghost" id="refreshCampaigns" type="button">새로고침</button></div>
-          <div id="uploadNotice" class="upload-notice" hidden aria-live="polite"><span class="upload-notice-icon">◉</span><div><span class="eyebrow">UPLOAD VOICE STATUS</span><strong id="uploadNoticeText">업로드 상태를 기다리는 중입니다.</strong><small>완료된 채널마다 한국어 안내 음성이 재생됩니다.</small></div><span class="upload-notice-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span></div>
-          <div id="campaignList" class="campaign-list"></div><div id="campaignEmpty" class="empty-inline">아직 예약 작업이 없습니다.</div>
+          <div class="panel-subhead" hidden><span class="eyebrow">OUTBOX</span><strong>예약 · 전송 작업</strong><button class="button button-ghost" id="refreshCampaigns" type="button">새로고침</button></div>
+          <div id="campaignList" class="campaign-list" hidden></div><div id="campaignEmpty" class="empty-inline" hidden>아직 예약 작업이 없습니다.</div>
         </section>
 
         <section class="panel" id="calendarPanel" hidden><div class="panel-head"><div><span class="eyebrow">04 / VISUAL CALENDAR</span><h2>예약 캘린더</h2><p>날짜를 클릭하지 않아도 이번 달 전송 흐름과 작업 상태를 한눈에 확인할 수 있습니다.</p></div><div class="calendar-nav"><button class="button button-ghost" id="prevMonth">←</button><strong id="calendarMonth">—</strong><button class="button button-ghost" id="nextMonth">→</button></div></div><div class="calendar-week"><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span><span>일</span></div><div id="calendarGrid" class="calendar-grid"></div></section>
 
-        <section class="insight-grid" id="insights">
+        <section class="insight-grid" id="insights" hidden>
           <section class="panel"><div class="panel-head compact"><div><span class="eyebrow">05 / ANALYTICS</span><h2>게시 후 성과</h2></div><button class="button button-ghost" id="refreshAnalytics" type="button">통계 갱신</button></div><div class="metric-strip"><div><span>VIEWS</span><strong id="analyticsViews">0</strong></div><div><span>LIKES</span><strong id="analyticsLikes">0</strong></div><div><span>COMMENTS</span><strong id="analyticsComments">0</strong></div></div><div id="analyticsList" class="insight-list"></div></section>
-          <section class="panel"><div class="panel-head compact"><div><span class="eyebrow">06 / COMMUNITY</span><h2>댓글 관리</h2></div><span class="sandbox-label">SANDBOX FEED</span></div><div id="commentsList" class="comments-list"></div><div id="commentsEmpty" class="empty-inline">게시된 영상의 mock 댓글이 여기에 표시됩니다.</div></section>
+          <section class="panel"><div class="panel-head compact"><div><span class="eyebrow">06 / COMMUNITY</span><h2>댓글 관리</h2></div></div><div id="commentsList" class="comments-list"></div><div id="commentsEmpty" class="empty-inline">게시된 영상의 댓글이 여기에 표시됩니다.</div></section>
         </section>
 
         <section class="panel" id="library" hidden><div class="panel-head compact"><div><span class="eyebrow">07 / ACTIVITY LOG</span><h2>작업 로그</h2></div><button class="button button-ghost" id="refreshLogs" type="button">로그 갱신</button></div><div id="logsList" class="logs-list"></div></section>
@@ -111,6 +112,7 @@
 
   <div id="accountModal" class="modal-backdrop" hidden><div class="modal" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle"><button class="modal-close" id="closeAccountModal" type="button" aria-label="닫기">×</button><span class="eyebrow" id="accountModalEyebrow">CONNECT DESTINATION</span><h2 id="accountModalTitle">SNS 계정 로그인 확인</h2><p id="accountModalDescription">공식 로그인 창에서 인증이 성공해야 CONNECTED로 표시됩니다.</p><form id="accountForm"><label>서비스<select id="accountProvider"><option value="naver">네이버 클립</option><option value="tiktok">TikTok</option><option value="facebook">Facebook</option><option value="instagram">Instagram</option></select></label><label>표시 이름<input id="accountDisplayName" placeholder="예: 브랜드 공식 채널" autocomplete="name" required></label><label>아이디 또는 채널 핸들<input id="accountHandle" placeholder="예: @brand_channel" autocomplete="username" required></label><label>비밀번호<input id="accountPassword" type="password" placeholder="공식 로그인 창에서 입력하세요" autocomplete="current-password" required></label><label class="remember-login"><input id="rememberAccount" type="checkbox" checked><span>다음 로그인부터 기억하기</span><small>비밀번호는 암호화하여 이 PC에만 저장</small></label><div class="modal-actions"><button class="button button-outline" id="cancelAccountModal" type="button">취소</button><button class="button button-lime" type="submit">공식 로그인 확인</button></div></form></div></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/account-upload-state.js"></script>
   <script src="/app.js"></script>
   <script src="/platform-layout.js"></script>
 </body>

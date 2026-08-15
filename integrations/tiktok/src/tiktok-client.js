@@ -7,7 +7,7 @@ const STUDIO_URL = `${TIKTOK_ORIGIN}/tiktokstudio`;
 const UPLOAD_URL = `${STUDIO_URL}/upload?from=creator_center&tab=video`;
 const CONTENT_URL = `${STUDIO_URL}/content`;
 const MAX_FILE_SIZE = 30 * 1024 * 1024 * 1024;
-const SUPPORTED_EXTENSIONS = new Set([".mp4", ".webm"]);
+const SUPPORTED_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".mkv"]);
 
 export class TikTokLoginRequiredError extends Error {
   constructor(message = "열린 브라우저에서 TikTok 로그인이 필요합니다.") {
@@ -159,7 +159,7 @@ export class TikTokClient {
       };
     }
 
-    const postButton = this.page.getByRole("button", { name: /^(게시|Post)$/i });
+    const postButton = this.#postButton();
     if (!(await postButton.isVisible().catch(() => false)) || !(await postButton.isEnabled())) {
       throw new Error(`TikTok 게시 버튼을 사용할 수 없습니다: ${video.filePath}`);
     }
@@ -207,7 +207,7 @@ export class TikTokClient {
   }
 
   async #waitForUploadReady() {
-    const postButton = this.page.getByRole("button", { name: /^(게시|Post)$/i });
+    const postButton = this.#postButton();
     const deadline = Date.now() + this.timeoutMs * 3;
     while (Date.now() < deadline) {
       await this.#throwOnSecurityChallenge();
@@ -228,6 +228,10 @@ export class TikTokClient {
     }
 
     throw new Error("TikTok 동영상 업로드 완료 대기 시간이 초과되었습니다.");
+  }
+
+  #postButton() {
+    return this.page.getByRole("button", { name: /^(게시|게시하기|Post)$/i }).last();
   }
 
   async #fillCaption(caption) {

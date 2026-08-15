@@ -157,7 +157,8 @@ function cleanText(value, fallback = '', max = 1000) {
 
 function cleanNaverClipMetadata(value) {
   if (!value || typeof value !== 'object') return null;
-  return { title: cleanText(value.title, '', 80), description: cleanText(value.description, '', 300), hashtags: Array.isArray(value.hashtags) ? value.hashtags.map((tag) => cleanText(tag, '', 40)).filter(Boolean).slice(0, 8) : [], primaryCategory: cleanText(value.primaryCategory, '라이프 이벤트', 40), secondaryCategory: cleanText(value.secondaryCategory, '라이프 이벤트', 40), publicEnabled: value.publicEnabled !== false, scheduleRegistration: Boolean(value.scheduleRegistration), schedulePrivate: Boolean(value.schedulePrivate), country: value.country === 'kr' ? 'kr' : 'all', commentsAllowed: value.commentsAllowed === 'deny' ? 'deny' : 'allow' };
+  const product = value.productInfo && typeof value.productInfo === 'object' ? { type: cleanText(value.productInfo.type, '', 40), name: cleanText(value.productInfo.name, '', 120), url: cleanText(value.productInfo.url, '', 500) } : null;
+  return { title: cleanText(value.title, '', 80), description: cleanText(value.description, '', 300), hashtags: Array.isArray(value.hashtags) ? value.hashtags.map((tag) => cleanText(tag, '', 40)).filter(Boolean).slice(0, 8) : [], primaryCategory: cleanText(value.primaryCategory, '라이프 이벤트', 40), secondaryCategory: cleanText(value.secondaryCategory, '라이프 이벤트', 40), productInfo: product?.name || product?.url ? product : null, publicEnabled: value.publicEnabled !== false, scheduleRegistration: Boolean(value.scheduleRegistration), schedulePrivate: Boolean(value.schedulePrivate), country: value.country === 'kr' ? 'kr' : 'all', commentsAllowed: 'deny' };
 }
 
 function cleanInstagramMetadata(value) {
@@ -420,6 +421,15 @@ function existingRouteKeys(campaigns, options = {}) {
     .map((job) => `${job.videoId}:${job.accountId}`)));
 }
 
+function cleanFacebookMetadata(value) {
+  if (!value || typeof value !== 'object') return null;
+  return {
+    caption: cleanText(value.caption, '', 63206),
+    hashtags: Array.isArray(value.hashtags) ? value.hashtags.map((tag) => cleanText(tag, '', 40)).filter(Boolean).slice(0, 30) : [],
+    pageHandle: cleanText(value.pageHandle, '', 160)
+  };
+}
+
 async function createCampaign(store, req, res) {
   const body = await readRequestBody(req);
   const accounts = await readAccounts(store);
@@ -437,6 +447,7 @@ async function createCampaign(store, req, res) {
   const metadata = firstVideo?.aiMetadata || {};
   const naverClip = cleanNaverClipMetadata(body.naverClip || metadata.naverClip);
   const instagram = cleanInstagramMetadata(body.instagram || metadata.instagram);
+  const facebook = cleanFacebookMetadata(body.facebook || metadata.facebook);
   const title = cleanText(body.title || metadata.title, '새 콘텐츠', 120);
   const description = cleanText(body.description || metadata.description, '', 1000);
   const hashtags = Array.isArray(body.hashtags) ? body.hashtags.map((tag) => cleanText(tag, '', 40)).filter(Boolean).slice(0, 12) : (metadata.hashtags || []);
@@ -444,7 +455,7 @@ async function createCampaign(store, req, res) {
   const campaignMode = body.directUpload === true ? 'live' : settings.providerMode;
   const campaign = {
     id: createId('cmp_'), title, description, hashtags, privacy: cleanText(body.privacy, 'public', 20), scheduledAt: parsedSchedule.toISOString(), status: 'scheduled', mode: campaignMode, directUpload: body.directUpload === true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), routes: acceptedRoutes, skippedRoutes,
-    jobs: acceptedRoutes.map((route) => ({ id: createId('job_'), accountId: route.accountId, provider: route.provider, handle: route.handle, slotNumber: route.slotNumber, videoId: route.videoId, clipMetadata: route.provider === 'naver' ? naverClip : null, instagramMetadata: route.provider === 'instagram' ? instagram : null, mode: campaignMode, status: 'queued', progress: 0, attempt: 0, maxAttempts: MAX_ATTEMPTS, nextRetryAt: parsedSchedule.toISOString(), lastError: null, analytics: null, logs: [{ message: body.directUpload === true ? '바로 업로드 작업 생성' : '예약 작업 생성', level: 'info', createdAt: new Date().toISOString() }] }))
+    jobs: acceptedRoutes.map((route) => ({ id: createId('job_'), accountId: route.accountId, provider: route.provider, handle: route.handle, slotNumber: route.slotNumber, videoId: route.videoId, clipMetadata: route.provider === 'naver' ? naverClip : null, instagramMetadata: route.provider === 'instagram' ? instagram : null, facebookMetadata: route.provider === 'facebook' ? facebook : null, mode: campaignMode, status: 'queued', progress: 0, attempt: 0, maxAttempts: MAX_ATTEMPTS, nextRetryAt: parsedSchedule.toISOString(), lastError: null, analytics: null, logs: [{ message: body.directUpload === true ? '바로 업로드 작업 생성' : '예약 작업 생성', level: 'info', createdAt: new Date().toISOString() }] }))
   };
   campaigns.unshift(campaign);
   await writeCollection(store, 'campaigns', campaigns);

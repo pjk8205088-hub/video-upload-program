@@ -6,23 +6,43 @@ const CREATOR_ORIGIN = "https://clipcreators.naver.com";
 const CONTENTS_URL = `${CREATOR_ORIGIN}/web/contents/clips`;
 const UPLOAD_URL = `${CREATOR_ORIGIN}/web/upload`;
 
+export function normalizeCreatorText(value) {
+  return String(value || "")
+    .replace(/지원되지 않는 명령줄 플래그[^\n]*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function classifyUploadState({ url, bodyText, fileName, playable }) {
-  const text = String(bodyText || "");
+  const text = normalizeCreatorText(bodyText);
   const onDraftPage = /\/web\/draft\/\d+/i.test(String(url || ""));
-  const hasFile = !fileName || text.includes(fileName);
+  const hasFile = !fileName || text.includes(fileName) || text.includes(path.parse(fileName).name);
   const hasFailure = /(업로드|인코딩|동영상 처리)\s*(실패|오류)/.test(text);
   const isProcessing = /(인코딩 중|인코딩 진행 중|업로드 중)/.test(text);
 
   if (hasFailure) return "failed";
-  if (onDraftPage && hasFile && playable && !isProcessing) return "ready";
+  if (onDraftPage && playable && !isProcessing && (hasFile || /등록|공개 설정|카테고리/.test(text))) return "ready";
   if (onDraftPage && hasFile) return "processing";
   return "waiting";
+}
+
+export function classifyRegistrationState({ url, bodyText, itemText, visibility = "current" }) {
+  const pageText = normalizeCreatorText(bodyText);
+  const publishedText = normalizeCreatorText(itemText);
+  if (/등록|게시/.test(pageText) && /실패|오류/.test(pageText)) return "failed";
+  if (publishedText) {
+    if (visibility === "private" && /비공개/.test(publishedText)) return "private";
+    if (visibility === "public" && !/비공개/.test(publishedText)) return "published";
+    if (visibility === "current") return /비공개/.test(publishedText) ? "private" : "published";
+  }
+  return "uncertain";
 }
 
 export class LoginRequiredError extends Error {
   constructor(message = "브라우저에서 네이버 로그인이 필요합니다.") {
     super(message);
     this.name = "LoginRequiredError";
+    this.code = "NAVER_LOGIN_REQUIRED";
   }
 }
 
@@ -30,6 +50,15 @@ export class ClipProfileRequiredError extends Error {
   constructor(message = "네이버 클립 프로필 생성 또는 약관 동의가 필요합니다.") {
     super(message);
     this.name = "ClipProfileRequiredError";
+    this.code = "NAVER_CLIP_PROFILE_REQUIRED";
+  }
+}
+
+export class NaverClipPublishUncertainError extends Error {
+  constructor(message = "네이버 클립 최종 등록 상태를 확인하지 못했습니다.") {
+    super(message);
+    this.name = "NaverClipPublishUncertainError";
+    this.code = "PUBLISH_STATE_UNCERTAIN";
   }
 }
 
@@ -58,6 +87,7 @@ export class NaverClipClient {
 
     const launchOptions = {
       headless: this.headless,
+      chromiumSandbox: true,
       viewport: { width: 1440, height: 1000 }
     };
     if (this.browserChannel !== "chromium") launchOptions.channel = this.browserChannel;
@@ -84,11 +114,7 @@ export class NaverClipClient {
       throw new ClipProfileRequiredError();
     }
 
-    const hasCreatorUi = await this.page
-      .getByRole("button", { name: "업로드", exact: true })
-      .isVisible()
-      .catch(() => false);
-    return hasCreatorUi;
+    return this.#hasCreatorUi();
   }
 
   async ensureLoggedIn({ waitForManualLogin = true, manualTimeoutMs = 300_000 } = {}) {
@@ -107,11 +133,7 @@ export class NaverClipClient {
         throw new ClipProfileRequiredError();
       }
       if (/clipcreators\.naver\.com\/web\//i.test(currentUrl)) {
-        const hasCreatorUi = await this.page
-          .getByRole("button", { name: "업로드", exact: true })
-          .isVisible()
-          .catch(() => false);
-        if (hasCreatorUi) return true;
+        if (await this.#hasCreatorUi()) return true;
       }
     }
 
@@ -131,6 +153,7 @@ export class NaverClipClient {
     const results = [];
     for (const video of normalized) {
       await this.page.goto(UPLOAD_URL, { waitUntil: "domcontentloaded" });
+      await this.#waitForUploadSurface();
       await this.#selectFiles([video.filePath]);
       const draftUrl = await this.#waitForUploadCompletion(video);
 
@@ -158,7 +181,7 @@ export class NaverClipClient {
   }
 
   async #selectFiles(filePaths) {
-    const chooseButton = this.page.getByRole("button", { name: "파일 선택", exact: true });
+    const chooseButton = this.page.getByRole("button", { name: /파일 선택|동영상 선택|영상 선택/ }).first();
     if (await chooseButton.isVisible().catch(() => false)) {
       const [chooser] = await Promise.all([
         this.page.waitForEvent("filechooser"),
@@ -169,8 +192,13 @@ export class NaverClipClient {
     }
 
     const fileInput = this.page.locator('input[type="file"]').last();
-    await fileInput.waitFor({ state: "attached" });
-    await fileInput.setInputFiles(filePaths);
+    if (await fileInput.count()) {
+      await fileInput.waitFor({ state: "attached", timeout: this.timeoutMs });
+      await fileInput.setInputFiles(filePaths);
+      return;
+    }
+
+    throw new Error("네이버 클립 동영상 선택 입력을 찾지 못했습니다. 업로드 페이지를 새로고침한 뒤 다시 시도해 주세요.");
   }
 
   async #waitForUploadCompletion(video) {
@@ -179,11 +207,11 @@ export class NaverClipClient {
     const deadline = Date.now() + timeout;
 
     await this.page.waitForURL(/\/web\/draft\/\d+/, { timeout });
-    await this.page.getByRole("textbox", { name: "경험을 기록해보세요." }).waitFor({ state: "visible", timeout });
+    await this.#descriptionBox().waitFor({ state: "visible", timeout });
 
     while (Date.now() < deadline) {
       const bodyText = await this.page.locator("body").innerText();
-      const playable = await this.page.getByRole("button", { name: "재생", exact: true }).isVisible().catch(() => false);
+      const playable = await this.#hasPlayablePreview();
       const state = classifyUploadState({ url: this.page.url(), bodyText, fileName, playable });
       if (state === "ready") return this.page.url();
       if (state === "failed") throw new Error(`네이버 클립 영상 처리에 실패했습니다: ${fileName}`);
@@ -193,19 +221,71 @@ export class NaverClipClient {
     throw new Error(`네이버 클립 영상 처리 시간이 초과되었습니다: ${fileName}`);
   }
 
-  async #registerCurrentDraft(video, draftUrl) {
-    await this.page.getByRole("textbox", { name: "경험을 기록해보세요." }).waitFor({ state: "visible" });
+  async #hasCreatorUi() {
+    if (!/clipcreators\.naver\.com\/web\//i.test(this.page.url())) return false;
+    const uploadControl = this.page.getByRole("button", { name: /업로드/ }).first();
+    if (await uploadControl.isVisible().catch(() => false)) return true;
+    const uploadLink = this.page.getByRole("link", { name: /업로드/ }).first();
+    if (await uploadLink.isVisible().catch(() => false)) return true;
+    return /\/web\/(?:dashboard|contents|upload|draft)/i.test(this.page.url());
+  }
 
-    const captionBox = this.page.getByRole("textbox", {
-      name: "경험을 기록해보세요."
-    });
+  async #waitForUploadSurface() {
+    const deadline = Date.now() + this.timeoutMs;
+    while (Date.now() < deadline) {
+      const currentUrl = this.page.url();
+      if (/nid\.naver\.com|nidlogin/i.test(currentUrl)) throw new LoginRequiredError();
+      if (/clipcreators\.naver\.com\/join/i.test(currentUrl)) throw new ClipProfileRequiredError();
+      const fileInput = this.page.locator('input[type="file"]');
+      if (await fileInput.count()) return true;
+      const chooseButton = this.page.getByRole("button", { name: /파일 선택|동영상 선택|영상 선택/ }).first();
+      if (await chooseButton.isVisible().catch(() => false)) return true;
+      await this.page.waitForTimeout(350);
+    }
+    throw new Error("네이버 클립 업로드 화면이 준비되지 않았습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.");
+  }
+
+  #descriptionBox() {
+    return this.page.locator('textarea[placeholder*="경험"], textarea[aria-label*="경험"], textarea, [contenteditable="true"]').first();
+  }
+
+  async #hasPlayablePreview() {
+    if (await this.page.locator("video").count()) {
+      const playable = await this.page.locator("video").first().evaluate((video) => video.readyState >= 2 || Number.isFinite(video.duration)).catch(() => false);
+      if (playable) return true;
+    }
+    return this.page.getByRole("button", { name: /재생|play/i }).first().isVisible().catch(() => false);
+  }
+
+  async #registerCurrentDraft(video, draftUrl) {
+    const captionBox = this.#descriptionBox();
+    await captionBox.waitFor({ state: "visible" });
     await captionBox.fill(video.caption);
 
     await this.#chooseCategory(video.category);
     if (video.infoTag) await this.#chooseInfoTag(video.infoTag);
+    if (video.productInfo?.name || video.productInfo?.url) await this.#chooseProduct(video.productInfo);
     await this.#setVisibility(video.visibility);
-    const registerButton = this.page.getByRole("button", { name: "등록", exact: true });
+    await this.#disableComments();
+    await this.page.waitForTimeout(500);
+    const registerButton = this.page.getByRole("button", { name: /^등록$/ }).last();
+    await registerButton.waitFor({ state: "visible", timeout: this.timeoutMs });
+    await registerButton.scrollIntoViewIfNeeded().catch(() => undefined);
+    const enabled = await registerButton.isEnabled().catch(() => false);
+    if (!enabled) throw new Error("네이버 클립 등록 버튼이 아직 활성화되지 않았습니다. 필수 입력값을 확인해 주세요.");
     await registerButton.click();
+
+    // A confirmation button only belongs to the modal opened by 등록.
+    // Never click a second page-level 등록 button when no modal appeared.
+    const confirmationDialog = this.page.getByRole("dialog").last();
+    if (await confirmationDialog.isVisible().catch(() => false)) {
+      const confirmButton = confirmationDialog.getByRole("button", { name: /^(확인|등록)$/ }).last();
+      if (await confirmButton.isVisible().catch(() => false) && await confirmButton.isEnabled().catch(() => false)) await confirmButton.click();
+    }
+
+    let successMessageSeen = false;
+    const successMessage = this.page.getByText(/등록 (완료|되었습니다)|게시 (완료|되었습니다)/).first();
+    successMessageSeen = await successMessage.waitFor({ state: "visible", timeout: 8_000 }).then(() => true).catch(() => false);
 
     await this.page.waitForURL(/\/web\/contents(?:\/clips)?/, {
       timeout: this.timeoutMs
@@ -213,26 +293,69 @@ export class NaverClipClient {
       await this.page.goto(CONTENTS_URL, { waitUntil: "domcontentloaded" });
     });
 
-    const publishedRow = this.page.locator("tr").filter({ hasText: video.caption }).first();
-    await publishedRow.waitFor({ state: "visible" });
-
-    const statusText = await publishedRow.innerText();
-    if (video.visibility === "public" && !statusText.includes("공개")) {
-      throw new Error(`최종 등록 상태를 확인하지 못했습니다: ${video.caption}`);
-    }
-    if (video.visibility === "private" && !statusText.includes("비공개")) {
-      throw new Error(`비공개 등록 상태를 확인하지 못했습니다: ${video.caption}`);
-    }
+    const verification = await this.#verifyRegistration(video, successMessageSeen);
+    if (verification.status === "failed") throw new Error(`네이버 클립 최종 등록에 실패했습니다: ${video.caption}`);
+    if (verification.status === "uncertain") throw new NaverClipPublishUncertainError(`네이버 클립 등록 후 콘텐츠 목록에서 영상을 확인하지 못했습니다: ${video.caption}`);
 
     return {
       filePath: video.filePath,
       caption: video.caption,
       category: video.category,
       visibility: video.visibility,
-      status: video.visibility === "private" ? "private" : "published",
+      status: verification.status,
       draftUrl,
-      rowText: statusText.replace(/\s+/g, " ").trim()
+      url: this.page.url(),
+      rowText: verification.itemText,
+      verification: verification.evidence
     };
+  }
+
+  async #verifyRegistration(video, successMessageSeen) {
+    const caption = normalizeCreatorText(video.caption);
+    const needles = [caption, caption.slice(0, 40), caption.slice(0, 20), path.basename(video.filePath), video.draftName]
+      .map(normalizeCreatorText)
+      .filter((value, index, values) => value && values.indexOf(value) === index);
+    // Clip Creator can update the list asynchronously. Keep polling long
+    // enough for the list refresh, but do not leave the UI in "checking"
+    // forever when the publish confirmation already returned.
+    const deadline = Date.now() + Math.min(Math.max(this.timeoutMs, 20_000), 35_000);
+    while (Date.now() < deadline) {
+      let itemText = "";
+      for (const needle of needles) {
+        const item = this.page.locator('tr, [role="row"], li, article, [class*="item"], [class*="card"]').filter({ hasText: needle }).first();
+        if (await item.isVisible().catch(() => false)) {
+          itemText = normalizeCreatorText(await item.innerText().catch(() => ""));
+          break;
+        }
+        const textMatch = this.page.getByText(needle, { exact: false }).first();
+        if (await textMatch.isVisible().catch(() => false)) {
+          itemText = normalizeCreatorText(await textMatch.innerText().catch(() => needle));
+          break;
+        }
+      }
+      const bodyText = normalizeCreatorText(await this.page.locator("body").innerText().catch(() => ""));
+      const status = classifyRegistrationState({ url: this.page.url(), bodyText, itemText, visibility: video.visibility });
+      if (status !== "uncertain") return { status, itemText, evidence: "content-list" };
+      if (successMessageSeen && /\/web\/contents(?:\/clips)?/i.test(this.page.url()) && await this.#hasContentListItem()) {
+        return { status: video.visibility === "private" ? "private" : "published", itemText: "", evidence: "success-and-content-list" };
+      }
+      await this.page.waitForTimeout(1_500);
+      await this.page.reload({ waitUntil: "domcontentloaded" }).catch(() => undefined);
+    }
+    return { status: "uncertain", itemText: "", evidence: successMessageSeen ? "success-message-only" : "none" };
+  }
+
+  async #hasContentListItem() {
+    const candidates = this.page.locator('tr, [role="row"], li, article, [class*="item"], [class*="card"]');
+    const count = await candidates.count().catch(() => 0);
+    if (count < 2) return false;
+    for (let index = 0; index < Math.min(count, 30); index += 1) {
+      const row = candidates.nth(index);
+      const text = normalizeCreatorText(await row.innerText().catch(() => ""));
+      if (!text || /콘텐츠|카테고리|상태|날짜|조회수/.test(text)) continue;
+      if (await row.locator('video, img, button, a').count().catch(() => 0)) return true;
+    }
+    return false;
   }
 
   async #chooseCategory(category) {
@@ -241,12 +364,34 @@ export class NaverClipClient {
     }
 
     const [primary, secondary] = category;
-    await this.page.getByRole("button", { name: "1차 카테고리", exact: true }).click();
-    await this.page.getByRole("button", { name: primary, exact: true }).click();
-    await this.page.getByRole("button", { name: "2차 카테고리", exact: true }).click();
-    await this.page.getByRole("button", { name: secondary, exact: true }).click();
-    await this.page.getByRole("button", { name: primary, exact: true }).waitFor({ state: "visible" });
-    await this.page.getByRole("button", { name: secondary, exact: true }).waitFor({ state: "visible" });
+    await this.#chooseCategoryLevel(0, "1차 카테고리", primary);
+    await this.#chooseCategoryLevel(1, "2차 카테고리", secondary);
+  }
+
+  async #chooseCategoryLevel(index, label, value) {
+    const selects = this.page.locator("select");
+    if (await selects.count() > index) {
+      const select = selects.nth(index);
+      const selected = await select.selectOption({ label: value }).then(() => true).catch(() => false);
+      if (selected) return;
+    }
+
+    const trigger = this.page.getByRole("button", { name: new RegExp(`${label}|${value}`) }).first();
+    if (!(await trigger.isVisible().catch(() => false))) throw new Error(`네이버 클립 ${label} 선택 메뉴를 찾지 못했습니다.`);
+    await trigger.click();
+    const option = this.page.getByRole("option", { name: value, exact: true }).last();
+    if (await option.isVisible().catch(() => false)) await option.click();
+    else {
+      const textOption = this.page.getByText(value, { exact: true }).last();
+      if (!(await textOption.isVisible().catch(() => false))) throw new Error(`네이버 클립 카테고리를 찾지 못했습니다: ${value}`);
+      await textOption.click();
+    }
+
+    // The current Clip Creator dialog applies both selections with a
+    // separate 저장 button. Older pages have no such button, so this is
+    // intentionally best-effort.
+    const save = this.page.getByRole("button", { name: "저장", exact: true }).last();
+    if (await save.isVisible().catch(() => false) && await save.isEnabled().catch(() => false)) await save.click();
   }
 
   async #chooseInfoTag(infoTag) {
@@ -259,7 +404,8 @@ export class NaverClipClient {
     } else {
       const trigger = this.page.getByText(tag, { exact: true }).last();
       if (!(await trigger.isVisible().catch(() => false))) {
-        throw new Error(`네이버 클립 정보태그를 찾지 못했습니다: ${tag}`);
+        this.logger.warn?.(`네이버 클립 정보태그를 찾지 못해 기본값으로 계속합니다: ${tag}`);
+        return false;
       }
       await trigger.click();
     }
@@ -268,15 +414,61 @@ export class NaverClipClient {
     if (await confirm.isVisible().catch(() => false)) await confirm.click();
     const close = this.page.getByRole('button', { name: /닫기|×/ }).last();
     if (await close.isVisible().catch(() => false)) await close.click();
+    return true;
+  }
+
+  async #chooseProduct(productInfo) {
+    const name = String(productInfo?.name || '').trim();
+    const url = String(productInfo?.url || '').trim();
+    const trigger = this.page.getByRole('button', { name: /상품 정보|Product information/i }).first();
+    if (!(await trigger.isVisible().catch(() => false))) return false;
+    await trigger.click();
+    const search = this.page.getByPlaceholder(/상품 검색|상품을 검색|Search product/i).first();
+    if (await search.isVisible().catch(() => false)) await search.fill(name || url);
+    const card = this.page.locator('[role="dialog"], [class*="modal"], body').filter({ hasText: name || url }).last();
+    const select = card.getByRole('button', { name: /선택|Select/i }).last();
+    if (!(await select.isVisible().catch(() => false))) return false;
+    await select.click();
+    const purchaseDialog = this.page.getByRole('dialog').filter({ hasText: /구매 인증|Purchase verification/i }).last();
+    const certificationButton = purchaseDialog.getByRole('button', { name: /^인증하기$|^Verify$/i }).last();
+    if (await purchaseDialog.isVisible().catch(() => false)) {
+      if (!(await certificationButton.isVisible().catch(() => false))) throw new Error('네이버 상품 구매 인증 창을 확인했지만 인증하기 버튼을 찾지 못했습니다.');
+      if (!(await certificationButton.isEnabled().catch(() => false))) throw new Error('네이버 상품 구매 인증 버튼이 아직 활성화되지 않았습니다.');
+      await certificationButton.click();
+      const completed = purchaseDialog.getByText(/인증 완료|인증되었습니다|Verified|완료/i).first();
+      await completed.waitFor({ state: 'visible', timeout: this.timeoutMs }).catch(() => undefined);
+    } else {
+      const confirm = this.page.getByRole('button', { name: /선택 완료|저장|확인|Done|Save/i }).last();
+      if (await confirm.isVisible().catch(() => false) && await confirm.isEnabled().catch(() => false)) await confirm.click();
+    }
+    return true;
   }
 
   async #setVisibility(visibility) {
     if (visibility === "current") return;
 
-    const publicSwitch = this.page.getByRole("switch", { name: "전체 공개" });
+    let publicSwitch = this.page.getByRole("switch", { name: /전체 공개/ }).first();
+    if (!(await publicSwitch.count())) {
+      publicSwitch = this.page.getByText("전체 공개", { exact: true }).first().locator("xpath=ancestor::label[1]//input");
+    }
+    if (!(await publicSwitch.count())) throw new Error("네이버 클립 전체 공개 설정을 찾지 못했습니다.");
     const checked = await publicSwitch.isChecked();
     const shouldBeChecked = visibility === "public";
     if (checked !== shouldBeChecked) await publicSwitch.click();
+  }
+
+  async #disableComments() {
+    const deny = this.page.getByRole('radio', { name: /허용 안함|댓글 허용 안함|Don't allow comments/i }).last();
+    if (await deny.isVisible().catch(() => false)) {
+      if (!(await deny.isChecked().catch(() => false))) await deny.click();
+      return true;
+    }
+    const label = this.page.getByText(/허용 안함|Don't allow comments/i, { exact: true }).last();
+    if (await label.isVisible().catch(() => false)) {
+      await label.click();
+      return true;
+    }
+    return false;
   }
 
   #validateVideos(videos, finalize) {

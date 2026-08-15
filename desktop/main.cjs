@@ -49,6 +49,40 @@ async function hasProviderAuthCookie(authWindow, provider) {
   return hasProviderAuthCookieInSession(authWindow.webContents.session, provider);
 }
 
+const TIKTOK_CHROME_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+function applyProviderUserAgent(browserWindow, provider) {
+  if (provider === 'tiktok' && !browserWindow.isDestroyed()) {
+    browserWindow.webContents.setUserAgent(TIKTOK_CHROME_USER_AGENT);
+  }
+}
+
+async function followTikTokFacebookLogin(authWindow) {
+  if (authWindow.isDestroyed()) return false;
+  const url = authWindow.webContents.getURL();
+  if (!/tiktok\.com\/login|tiktok\.com\/passport/i.test(url)) return false;
+  return authWindow.webContents.executeJavaScript(`(() => {
+    const pattern = /facebook|\\uD398\\uC774\\uC2A4\\uBD81|\\uACC4\\uC18D\\uD558\\uAE30|continue with facebook/i;
+    const nodes = [...document.querySelectorAll('button, a, [role="button"]')];
+    const target = nodes.find((node) => pattern.test(String(node.innerText || node.getAttribute('aria-label') || node.getAttribute('title') || '')) && !node.disabled);
+    if (!target) return false;
+    target.click();
+    return true;
+  })()`, true).catch(() => false);
+}
+
+async function isProviderLoginConfirmed(authWindow, provider) {
+  if (await hasProviderAuthCookie(authWindow, provider)) return true;
+  // TikTok may finish its Facebook-based login through a redirect before the
+  // TikTok session cookie is written. Use the authenticated creator UI as a
+  // fallback so the login flow does not close prematurely.
+  if (provider !== 'tiktok' || authWindow.isDestroyed()) return false;
+  const url = authWindow.webContents.getURL();
+  if (!/^https:\/\/(?:www\.)?tiktok\.com\//i.test(url) || /\/login|\/passport/i.test(url)) return false;
+  const body = await authWindow.webContents.executeJavaScript('document.body?.innerText || ""', true).catch(() => '');
+  return /upload|creator|로그아웃|log out|프로필 수정/i.test(String(body));
+}
+
 async function clearProviderAuth(provider) {
   const currentAuthSession = authSession();
   const result = await clearProviderAuthCookies(currentAuthSession, provider);
@@ -78,27 +112,31 @@ function verifyProviderLogin(provider) {
   }
   let resolveFlow;
   const promise = new Promise((resolve) => { resolveFlow = resolve; });
-  const authWindow = new BrowserWindow({ parent: mainWindow, width: 520, height: 820, minWidth: 420, minHeight: 640, title: `${provider} 공식 로그인`, autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: AUTH_PARTITION } });
+  const authWindow = new BrowserWindow({ parent: mainWindow, show: true, width: 520, height: 820, minWidth: 420, minHeight: 640, title: `${provider} 공식 로그인`, autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: AUTH_PARTITION } });
+  applyProviderUserAgent(authWindow, provider);
   activeAuthFlows.set(provider, { window: authWindow, promise });
   {
     let finished = false;
+    let pollTimer = null;
     const finish = (result) => {
       if (finished) return;
       finished = true;
+      if (pollTimer) clearInterval(pollTimer);
       activeAuthFlows.delete(provider);
       if (!authWindow.isDestroyed()) authWindow.close();
       resolveFlow(result);
     };
     const check = async () => {
       if (finished || authWindow.isDestroyed()) return;
-      if (await hasProviderAuthCookie(authWindow, provider)) {
+      if (await isProviderLoginConfirmed(authWindow, provider)) {
         await flushAuthSession(authWindow.webContents.session);
         finish({ verified: true, provider, persisted: true });
       }
     };
-    authWindow.webContents.on('did-finish-load', check);
+    authWindow.webContents.on('did-finish-load', async () => { if (!authWindow.isDestroyed()) { authWindow.show(); authWindow.focus(); } if (provider === 'tiktok') await followTikTokFacebookLogin(authWindow); check(); });
     authWindow.webContents.on('did-navigate', check);
     authWindow.webContents.on('did-navigate-in-page', check);
+    pollTimer = setInterval(() => { check().catch(() => {}); }, provider === 'tiktok' ? 750 : 1_000);
     authWindow.on('closed', () => finish({ verified: false, cancelled: true, provider }));
     authWindow.loadURL(config.loginUrl).catch(() => finish({ verified: false, provider, reason: 'load_failed' }));
   }
@@ -147,6 +185,7 @@ async function prepareProviderUpload(provider, show = false) {
   }
 
   const uploadWindow = new BrowserWindow({ parent: mainWindow, show: false, width: 1440, height: 920, minWidth: 1080, minHeight: 720, title: `${provider} 동영상 업로드`, autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false, partition: AUTH_PARTITION } });
+  applyProviderUserAgent(uploadWindow, provider);
   preparedUploadWindows.set(provider, uploadWindow);
   uploadWindow.on('closed', () => { if (preparedUploadWindows.get(provider) === uploadWindow) preparedUploadWindows.delete(provider); });
   try {

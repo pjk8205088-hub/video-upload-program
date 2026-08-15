@@ -4,9 +4,14 @@ import { chromium } from "playwright";
 
 const INSTAGRAM_ORIGIN = "https://www.instagram.com";
 const HOME_URL = `${INSTAGRAM_ORIGIN}/`;
-const CREATE_URL = `${INSTAGRAM_ORIGIN}/create/select/`;
 const MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024;
 const SUPPORTED_EXTENSIONS = new Set([".mp4", ".mov"]);
+const CREATE_LABEL = /\uB9CC\uB4E4\uAE30|Create|\uC0C8 \uAC8C\uC2DC\uBB3C|New post/i;
+const POST_LABEL = /\uAC8C\uC2DC\uBB3C|Post|\uB9B4\uC2A4|Reel/i;
+const FILE_PICKER_LABEL = /\uCEF4\uD4E8\uD130\uC5D0\uC11C \uC120\uD0DD|\uC0AC\uC9C4\uACFC \uB3D9\uC601\uC0C1|\uC0AC\uC9C4 \uBC0F \uB3D9\uC601\uC0C1|Select from computer|Choose from computer|File select/i;
+const NEXT_LABEL = /^\uB2E4\uC74C|Next$/i;
+const SHARE_LABEL = /^\uACF5\uC720|\uAC8C\uC2DC|\uAC8C\uC2DC\uBB3C \uACF5\uC720|Share$/i;
+const UPLOAD_ERROR_LABEL = /\uC624\uB958|\uC2E4\uD328|\uD615\uC2DD|\uC6A9\uB7C9|\uD30C\uC77C\uC744 \uC5C5\uB85C\uB4DC|error|failed|format|size|upload failed/i;
 
 export class InstagramLoginRequiredError extends Error {
   constructor(message = "열린 브라우저에서 Instagram 로그인이 필요합니다.") {
@@ -57,6 +62,8 @@ export class InstagramClient {
     try {
       const launchOptions = {
         headless: this.headless,
+        chromiumSandbox: true,
+        ignoreDefaultArgs: ['--no-sandbox'],
         viewport: { width: 1440, height: 1000 }
       };
       if (this.browserChannel !== "chromium") launchOptions.channel = this.browserChannel;
@@ -87,7 +94,7 @@ export class InstagramClient {
     return !/accounts\/login|login\//i.test(this.page.url()) && await this.#hasAuthenticatedUi();
   }
 
-  async ensureLoggedIn({ waitForManualLogin = true, manualTimeoutMs = 300_000 } = {}) {
+  async ensureLoggedIn({ waitForManualLogin = true, manualTimeoutMs = 900_000 } = {}) {
     if (await this.isLoggedIn()) return true;
     if (!waitForManualLogin) throw new InstagramLoginRequiredError();
 
@@ -113,15 +120,16 @@ export class InstagramClient {
 
   async #uploadOne(video, finalize) {
     const knownUrls = await this.#publishedUrls(video.handle);
-    await this.page.goto(CREATE_URL, { waitUntil: "domcontentloaded" });
+    await this.#openCreateComposer(video.handle);
     await this.#throwOnSecurityChallenge();
     await this.#selectFile(video.filePath);
+    await this.#waitForSelectedMedia();
     await this.#clickNextUntilCaption();
     await this.#fillCaption(video.caption);
 
     if (!finalize) return { filePath: video.filePath, status: "uploaded-for-review", mode: "live" };
 
-    const shareButton = this.page.getByRole("button", { name: /^(공유|Share)$/i }).last();
+    const shareButton = this.#shareButton();
     if (!(await shareButton.isVisible().catch(() => false)) || !(await shareButton.isEnabled().catch(() => false))) {
       throw new Error(`Instagram 공유 버튼을 사용할 수 없습니다: ${video.filePath}`);
     }
@@ -140,12 +148,24 @@ export class InstagramClient {
   }
 
   async #selectFile(filePath) {
+    const visibleChooser = this.page.getByRole("button", { name: FILE_PICKER_LABEL }).first();
+    if (await visibleChooser.isVisible().catch(() => false)) {
+      const [chooser] = await Promise.all([
+        this.page.waitForEvent("filechooser"),
+        visibleChooser.click()
+      ]);
+      await chooser.setFiles(filePath);
+      return;
+    }
     const fileInput = this.page.locator('input[type="file"]').first();
     if ((await fileInput.count()) > 0) {
       await fileInput.setInputFiles(filePath);
       return;
     }
-    const chooserButton = this.page.getByRole("button", { name: /사진 및 동영상 선택|Select from computer|파일 선택/i }).first();
+    const chooserButton = this.page.getByText(FILE_PICKER_LABEL).first();
+    if (!(await chooserButton.isVisible().catch(() => false))) {
+      throw new Error("Instagram 파일 선택 버튼을 찾지 못했습니다.");
+    }
     const [chooser] = await Promise.all([
       this.page.waitForEvent("filechooser"),
       chooserButton.click()
@@ -153,17 +173,66 @@ export class InstagramClient {
     await chooser.setFiles(filePath);
   }
 
+  async #openCreateComposer(handle = "") {
+    const normalizedHandle = String(handle || "").replace(/^@+/, "").trim();
+    await this.page.goto(normalizedHandle ? `${INSTAGRAM_ORIGIN}/${encodeURIComponent(normalizedHandle)}/` : HOME_URL, { waitUntil: "domcontentloaded" });
+    await this.#throwOnSecurityChallenge();
+    if (normalizedHandle) {
+      const currentPath = new URL(this.page.url()).pathname.toLowerCase();
+      if (!currentPath.includes(`/${normalizedHandle.toLowerCase()}`)) {
+        throw new InstagramLoginRequiredError(`Instagram 계정 ${normalizedHandle} 프로필을 확인하지 못했습니다.`);
+      }
+    }
+
+    const create = this.page.getByRole("link", { name: CREATE_LABEL }).first();
+    const createButton = this.page.getByRole("button", { name: CREATE_LABEL }).first();
+    if (await create.isVisible().catch(() => false)) await create.click();
+    else if (await createButton.isVisible().catch(() => false)) await createButton.click();
+    else {
+      const createText = this.page.getByText(CREATE_LABEL).first();
+      if (await createText.isVisible().catch(() => false)) await createText.click();
+      else throw new Error("인스타그램 프로필에서 + 만들기 버튼을 찾지 못했습니다. 로그인 계정과 프로필을 확인해 주세요.");
+    }
+
+    await this.page.waitForTimeout(500);
+    const post = this.page.getByRole("menuitem", { name: POST_LABEL }).first();
+    if (await post.isVisible().catch(() => false)) await post.click();
+    const directFileInput = this.page.locator('input[type="file"]').first();
+    if (!(await directFileInput.count())) {
+      const uploadText = this.page.getByText(/사진과 동영상을 여기로 끌어다 놓으세요|Select from computer|컴퓨터에서 선택/i).first();
+      if (!(await uploadText.isVisible().catch(() => false))) await this.page.waitForTimeout(500);
+    }
+  }
+
+  async #waitForSelectedMedia() {
+    const deadline = Date.now() + Math.min(this.timeoutMs, 30_000);
+    while (Date.now() < deadline) {
+      await this.#throwOnUploadError();
+      const fileInput = this.page.locator('input[type="file"]').first();
+      const hasSelectedFile = await fileInput.evaluate((element) => Boolean(element.files?.length)).catch(() => false);
+      const hasPreview = await this.page.locator('video, img[src^="blob:"]').count().catch(() => 0);
+      const next = this.page.getByRole("button", { name: NEXT_LABEL }).last();
+      if (hasPreview > 0 || (hasSelectedFile && await next.isVisible().catch(() => false))) return true;
+      await this.page.waitForTimeout(350);
+    }
+    throw new Error(`Instagram 업로드 미리보기를 준비하지 못했습니다: ${this.page.url()}`);
+  }
+
   async #clickNextUntilCaption() {
     for (let step = 0; step < 2; step += 1) {
       const captionBox = this.page.locator('textarea, [contenteditable="true"]').first();
       if (await captionBox.isVisible().catch(() => false)) return;
-      const next = this.page.getByRole("button", { name: /^(다음|Next)$/i }).last();
+      const next = this.page.getByRole("button", { name: NEXT_LABEL }).last();
       if (!(await next.isVisible().catch(() => false))) break;
       await next.click();
       await this.page.waitForTimeout(500);
     }
     const captionBox = this.page.locator('textarea, [contenteditable="true"]').first();
     await captionBox.waitFor({ state: "visible", timeout: this.timeoutMs });
+  }
+
+  #shareButton() {
+    return this.page.getByRole("button", { name: SHARE_LABEL }).last();
   }
 
   async #fillCaption(caption) {
@@ -186,13 +255,21 @@ export class InstagramClient {
 
   async #verifyPublication(handle, knownUrls) {
     const shared = this.page.getByText(/게시물이 공유되었습니다|Your reel has been shared|Post shared/i).first();
-    await shared.waitFor({ state: "visible", timeout: 20_000 }).catch(() => undefined);
+    const sharedSeen = await shared.waitFor({ state: "visible", timeout: 20_000 }).then(() => true).catch(() => false);
     const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
       await this.#throwOnSecurityChallenge();
       const currentUrls = await this.#publishedUrls(handle);
       const newUrl = [...currentUrls].find((url) => !knownUrls.has(url));
       if (newUrl) return newUrl;
+      // Instagram sometimes shows the successful share confirmation before
+      // the profile grid exposes the new Reel. Treat that confirmation as
+      // the authoritative publish result after a short propagation grace
+      // period instead of leaving the UI in a false waiting state.
+      if (sharedSeen && Date.now() + 25_000 >= deadline) {
+        const normalizedHandle = String(handle || "").replace(/^@+/, "").trim();
+        if (normalizedHandle) return `${INSTAGRAM_ORIGIN}/${encodeURIComponent(normalizedHandle)}/`;
+      }
       await this.page.waitForTimeout(1_000);
     }
     return null;
@@ -212,6 +289,14 @@ export class InstagramClient {
   async #throwOnSecurityChallenge() {
     const challenge = this.page.getByText(/보안 확인|Security Check|checkpoint|challenge|CAPTCHA/i).first();
     if (await challenge.isVisible().catch(() => false)) throw new InstagramSecurityChallengeError();
+  }
+
+  async #throwOnUploadError() {
+    const error = this.page.getByText(UPLOAD_ERROR_LABEL).first();
+    if (await error.isVisible().catch(() => false)) {
+      const message = (await error.innerText().catch(() => "Instagram 업로드가 거부되었습니다.")).trim();
+      throw new Error(`Instagram 업로드 실패: ${message}`);
+    }
   }
 
   #validateVideos(videos) {
