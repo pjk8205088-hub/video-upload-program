@@ -832,7 +832,9 @@ openAccountModal = async function openAccountModalWithMemory(providerKey = 'inst
   if (openAccountModalBase(providerKey) === false) return;
   $('#accountDisplayName').value = providerFor(providerKey).label;
   $('#accountHandle').value = `${providerKey}-account`;
-  $('#accountModalDescription').textContent = '공식 로그인 창에서 로그인만 완료하면 연결됩니다. 비밀번호와 계정 정보는 이 화면에 입력하지 않습니다.';
+  $('#accountModalTitle').textContent = '로그인 확인';
+  $('#accountForm button[type="submit"]').textContent = '로그인 확인';
+  $('#accountModalDescription').textContent = '';
   $('#accountModalDescription').textContent = `${providerFor(providerKey).label} 공식 로그인 창에서 인증을 완료해야 연결됩니다. 비밀번호는 서버에 보내지 않고 이 PC의 암호화 저장소에만 기억합니다.`;
   $('#rememberAccount').checked = true;
   await fillRememberedCredentials(providerKey);
